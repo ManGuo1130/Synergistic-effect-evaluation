@@ -1,5 +1,5 @@
 
-# title: "CO emission & CO2 emission - Industrial production level assessment - 2022.8.17"
+# title: "CO emission & CO2 emission - Industrial production level assessment"
 
 
   
