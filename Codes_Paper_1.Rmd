@@ -1,0 +1,3188 @@
+---
+title: "Code - Paper 1"
+output: html_notebook
+---
+
+# 1. Data Visualization - Emission ratio
+```{r}
+# Upload the useful library
+library(sp)
+library(raster)
+library(reshape)
+library(ggplot2)
+library(rgdal)
+library(dplyr)
+library(viridis)
+library(hrbrthemes)
+library(rtsa)
+library(trend)
+library(stats)
+library(tidyverse)
+library(gghalves)
+library(ggpubr)
+library(ggsignif)
+library(ggsci)
+library(gridExtra)
+library(spatialEco)
+```
+
+```{r}
+# 加九段线
+line_1 <- readOGR("E:/19. PhD-原始数据-2022/8. 中国行政边界/SouthSea/SouthSea/九段线.shp")
+line_1 <- spTransform(line_1, CRS("+init=epsg:4326"))
+
+# 加边缘线
+line_2 <- readOGR("E:/19. PhD-原始数据-2022/8. 中国行政边界/SouthSea/SouthSea/bou2_4l.shp")
+line_2 <- spTransform(line_2, CRS("+init=epsg:4326"))
+
+# 加南海诸岛
+polygon_1 <- readOGR("E:/19. PhD-原始数据-2022/8. 中国行政边界/SouthSea/SouthSea/南海诸岛及其它岛屿.shp")
+polygon_1 <- spTransform(polygon_1, CRS("+init=epsg:4326"))
+```
+
+```{r}
+line_1_df <- fortify(line_1, region = "FID")
+line_2_df <- fortify(line_2, region = "FID")
+
+polygon_1_df <- fortify(polygon_1, region = "BOU2_4M_ID")
+```
+
+
+```{r}
+# Set the working directory for emission datasets
+CO2_emission_work_path <- "E:/19. PhD-原始数据-2022/13. CO2 data/CO2 Emission Inventory - Tsinghua University/CO2 - Yearly"
+CO_emission_work_path <- "E:/19. PhD-原始数据-2022/13. CO2 data/CO2 Emission Inventory - Tsinghua University/CO - Yearly"
+NOx_emission_work_path <- "E:/19. PhD-原始数据-2022/13. CO2 data/CO2 Emission Inventory - Tsinghua University/NOx - Yearly"
+SO2_emission_work_path <- "E:/19. PhD-原始数据-2022/13. CO2 data/CO2 Emission Inventory - Tsinghua University/SO2 - Yearly"
+```
+
+
+```{r}
+# Raster stacking & geographical coordination system setting
+CO2_emission_file <- list.files(CO2_emission_work_path, full.names = TRUE, pattern = ".asc") # ESRI grid data
+CO_emission_file <- list.files(CO_emission_work_path, full.names = TRUE, pattern = ".asc") # ESRI grid data
+NOx_emission_file <- list.files(NOx_emission_work_path, full.names = TRUE, pattern = ".asc") # ESRI grid data
+SO2_emission_file <- list.files(SO2_emission_work_path, full.names = TRUE, pattern = ".asc") # ESRI grid data
+
+CO2_emission_stack <- stack(CO2_emission_file)
+CO_emission_stack <- stack(CO_emission_file)
+NOx_emission_stack <- stack(NOx_emission_file)
+SO2_emission_stack <- stack(SO2_emission_file)
+
+crs(CO2_emission_stack) <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"
+crs(CO_emission_stack) <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"
+crs(NOx_emission_stack) <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"
+crs(SO2_emission_stack) <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"
+```
+
+```{r}
+# Upload shape-file of administrative boundary of China
+admin_boundary <- readOGR("F:/24. CO2_Emission_Output/Shapefiles_Hainan_Province/Province_2.shp")
+```
+
+```{r}
+# clip out China domain
+admin_boundary <- spTransform(admin_boundary, CRS("+init=epsg:4326"))
+admin_boundary_df <- fortify(admin_boundary, region = "OBJECTID_1")
+
+CO2_emission_stack <- crop(CO2_emission_stack, extent(admin_boundary), snap = "out")
+CO_emission_stack <- crop(CO_emission_stack, extent(admin_boundary), snap = "out")
+NOx_emission_stack <- crop(NOx_emission_stack, extent(admin_boundary), snap = "out")
+SO2_emission_stack <- crop(SO2_emission_stack, extent(admin_boundary), snap = "out")
+
+CO2_emission_stack <- stack(CO2_emission_stack)
+CO_emission_stack <- stack(CO_emission_stack)
+NOx_emission_stack <- stack(NOx_emission_stack)
+SO2_emission_stack <- stack(SO2_emission_stack)
+```
+
+```{r}
+# To generate emission ratio - raster stacks - 2008~2017
+CO_CO2_emission_ratio_stack <- CO_emission_stack / CO2_emission_stack
+CO_CO2_emission_ratio_stack <- stack(CO_CO2_emission_ratio_stack)
+CO_CO2_emission_ratio_stack
+
+NOx_CO2_emission_ratio_stack <- NOx_emission_stack / CO2_emission_stack
+NOx_CO2_emission_ratio_stack <- stack(NOx_CO2_emission_ratio_stack)
+NOx_CO2_emission_ratio_stack
+
+SO2_CO2_emission_ratio_stack <- SO2_emission_stack / CO2_emission_stack
+SO2_CO2_emission_ratio_stack <- stack(SO2_CO2_emission_ratio_stack)
+SO2_CO2_emission_ratio_stack
+```
+```{r}
+CO_CO2_2008_2017 <- CO_CO2_emission_ratio_stack[[10]] - CO_CO2_emission_ratio_stack[[1]]
+NOx_CO2_2008_2017 <- NOx_CO2_emission_ratio_stack[[10]] - NOx_CO2_emission_ratio_stack[[1]]
+SO2_CO2_2008_2017 <- SO2_CO2_emission_ratio_stack[[10]] - SO2_CO2_emission_ratio_stack[[1]]
+
+CO_CO2_2008_2017 <- stack(CO_CO2_2008_2017)
+NOx_CO2_2008_2017 <- stack(NOx_CO2_2008_2017)
+SO2_CO2_2008_2017 <- stack(SO2_CO2_2008_2017)
+```
+
+```{r}
+# 跳过 - 已生成
+writeRaster(CO_CO2_2008_2017,"C:/Users/guoma/Desktop/Paper_1 (DDL_5_30)/3. 中国边界/Emission_ratios_相对变化/CO_CO2_2008_2017.tif", overwrite = TRUE)
+writeRaster(NOx_CO2_2008_2017,"C:/Users/guoma/Desktop/Paper_1 (DDL_5_30)/3. 中国边界/Emission_ratios_相对变化/NOx_CO2_2008_2017.tif", overwrite = TRUE)
+writeRaster(SO2_CO2_2008_2017,"C:/Users/guoma/Desktop/Paper_1 (DDL_5_30)/3. 中国边界/Emission_ratios_相对变化/SO2_CO2_2008_2017.tif", overwrite = TRUE)
+```
+
+
+```{r}
+# To generate the dataframe of each raster stacks
+CO_CO2_emission_ratio_stack_df <- as.data.frame(CO_CO2_emission_ratio_stack, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+CO_CO2_emission_ratio_stack_df
+
+NOx_CO2_emission_ratio_stack_df <- as.data.frame(NOx_CO2_emission_ratio_stack, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+NOx_CO2_emission_ratio_stack_df
+
+SO2_CO2_emission_ratio_stack_df <- as.data.frame(SO2_CO2_emission_ratio_stack, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+SO2_CO2_emission_ratio_stack_df
+```
+
+```{r}
+# To summarize the statistic characteristic of  emission ratio raster stack
+summary(CO_CO2_emission_ratio_stack_df)
+summary(NOx_CO2_emission_ratio_stack_df)
+summary(SO2_CO2_emission_ratio_stack_df)
+```
+
+```{r}
+# To change the level of variables in the dataframes for the further mapping through years
+levels(CO_CO2_emission_ratio_stack_df$variable)[levels(CO_CO2_emission_ratio_stack_df$variable)=="X2008_00_total_CO"] <- "2008"
+levels(CO_CO2_emission_ratio_stack_df$variable)[levels(CO_CO2_emission_ratio_stack_df$variable)=="X2009_00_total_CO"] <- "2009"
+levels(CO_CO2_emission_ratio_stack_df$variable)[levels(CO_CO2_emission_ratio_stack_df$variable)=="X2010_00_total_CO"] <- "2010"
+levels(CO_CO2_emission_ratio_stack_df$variable)[levels(CO_CO2_emission_ratio_stack_df$variable)=="X2011_00_total_CO"] <- "2011"
+levels(CO_CO2_emission_ratio_stack_df$variable)[levels(CO_CO2_emission_ratio_stack_df$variable)=="X2012_00_total_CO"] <- "2012"
+levels(CO_CO2_emission_ratio_stack_df$variable)[levels(CO_CO2_emission_ratio_stack_df$variable)=="X2013_00_total_CO"] <- "2013"
+levels(CO_CO2_emission_ratio_stack_df$variable)[levels(CO_CO2_emission_ratio_stack_df$variable)=="X2014_00_total_CO"] <- "2014"
+levels(CO_CO2_emission_ratio_stack_df$variable)[levels(CO_CO2_emission_ratio_stack_df$variable)=="X2015_00_total_CO"] <- "2015"
+levels(CO_CO2_emission_ratio_stack_df$variable)[levels(CO_CO2_emission_ratio_stack_df$variable)=="X2016_00_total_CO"] <- "2016"
+levels(CO_CO2_emission_ratio_stack_df$variable)[levels(CO_CO2_emission_ratio_stack_df$variable)=="X2017_00_total_CO"] <- "2017"
+
+names(CO_CO2_emission_ratio_stack_df)[names(CO_CO2_emission_ratio_stack_df)=="variable"]  <- "Year"
+
+CO_CO2_emission_ratio_stack_df
+
+levels(NOx_CO2_emission_ratio_stack_df$variable)[levels(NOx_CO2_emission_ratio_stack_df$variable)=="X2008_00_total_NOx"] <- "2008"
+levels(NOx_CO2_emission_ratio_stack_df$variable)[levels(NOx_CO2_emission_ratio_stack_df$variable)=="X2009_00_total_NOx"] <- "2009"
+levels(NOx_CO2_emission_ratio_stack_df$variable)[levels(NOx_CO2_emission_ratio_stack_df$variable)=="X2010_00_total_NOx"] <- "2010"
+levels(NOx_CO2_emission_ratio_stack_df$variable)[levels(NOx_CO2_emission_ratio_stack_df$variable)=="X2011_00_total_NOx"] <- "2011"
+levels(NOx_CO2_emission_ratio_stack_df$variable)[levels(NOx_CO2_emission_ratio_stack_df$variable)=="X2012_00_total_NOx"] <- "2012"
+levels(NOx_CO2_emission_ratio_stack_df$variable)[levels(NOx_CO2_emission_ratio_stack_df$variable)=="X2013_00_total_NOx"] <- "2013"
+levels(NOx_CO2_emission_ratio_stack_df$variable)[levels(NOx_CO2_emission_ratio_stack_df$variable)=="X2014_00_total_NOx"] <- "2014"
+levels(NOx_CO2_emission_ratio_stack_df$variable)[levels(NOx_CO2_emission_ratio_stack_df$variable)=="X2015_00_total_NOx"] <- "2015"
+levels(NOx_CO2_emission_ratio_stack_df$variable)[levels(NOx_CO2_emission_ratio_stack_df$variable)=="X2016_00_total_NOx"] <- "2016"
+levels(NOx_CO2_emission_ratio_stack_df$variable)[levels(NOx_CO2_emission_ratio_stack_df$variable)=="X2017_00_total_NOx"] <- "2017"
+
+names(NOx_CO2_emission_ratio_stack_df)[names(NOx_CO2_emission_ratio_stack_df)=="variable"]  <- "Year"
+
+NOx_CO2_emission_ratio_stack_df
+
+levels(SO2_CO2_emission_ratio_stack_df$variable)[levels(SO2_CO2_emission_ratio_stack_df$variable)=="X2008_00_total_SO2"] <- "2008"
+levels(SO2_CO2_emission_ratio_stack_df$variable)[levels(SO2_CO2_emission_ratio_stack_df$variable)=="X2009_00_total_SO2"] <- "2009"
+levels(SO2_CO2_emission_ratio_stack_df$variable)[levels(SO2_CO2_emission_ratio_stack_df$variable)=="X2010_00_total_SO2"] <- "2010"
+levels(SO2_CO2_emission_ratio_stack_df$variable)[levels(SO2_CO2_emission_ratio_stack_df$variable)=="X2011_00_total_SO2"] <- "2011"
+levels(SO2_CO2_emission_ratio_stack_df$variable)[levels(SO2_CO2_emission_ratio_stack_df$variable)=="X2012_00_total_SO2"] <- "2012"
+levels(SO2_CO2_emission_ratio_stack_df$variable)[levels(SO2_CO2_emission_ratio_stack_df$variable)=="X2013_00_total_SO2"] <- "2013"
+levels(SO2_CO2_emission_ratio_stack_df$variable)[levels(SO2_CO2_emission_ratio_stack_df$variable)=="X2014_00_total_SO2"] <- "2014"
+levels(SO2_CO2_emission_ratio_stack_df$variable)[levels(SO2_CO2_emission_ratio_stack_df$variable)=="X2015_00_total_SO2"] <- "2015"
+levels(SO2_CO2_emission_ratio_stack_df$variable)[levels(SO2_CO2_emission_ratio_stack_df$variable)=="X2016_00_total_SO2"] <- "2016"
+levels(SO2_CO2_emission_ratio_stack_df$variable)[levels(SO2_CO2_emission_ratio_stack_df$variable)=="X2017_00_total_SO2"] <- "2017"
+
+names(SO2_CO2_emission_ratio_stack_df)[names(SO2_CO2_emission_ratio_stack_df)=="variable"]  <- "Year"
+
+SO2_CO2_emission_ratio_stack_df
+```
+
+
+```{r}
+# 选择1：差值
+CO_CO2_2008_2017_df <- as.data.frame(CO_CO2_2008_2017, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+levels(CO_CO2_2008_2017_df$variable)[levels(CO_CO2_2008_2017_df$variable)=="layer"] <- "2008-2017"
+
+
+NOx_CO2_2008_2017_df <- as.data.frame(NOx_CO2_2008_2017, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+levels(NOx_CO2_2008_2017_df$variable)[levels(NOx_CO2_2008_2017_df$variable)=="layer"] <- "2008-2017"
+
+
+SO2_CO2_2008_2017_df <- as.data.frame(SO2_CO2_2008_2017, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+levels(SO2_CO2_2008_2017_df$variable)[levels(SO2_CO2_2008_2017_df$variable)=="layer"] <- "2008-2017"
+
+
+names(CO_CO2_2008_2017_df)[names(CO_CO2_2008_2017_df)=="variable"]  <- "Year"
+names(NOx_CO2_2008_2017_df)[names(NOx_CO2_2008_2017_df)=="variable"]  <- "Year"
+names(SO2_CO2_2008_2017_df)[names(SO2_CO2_2008_2017_df)=="variable"]  <- "Year"
+```
+
+
+```{r}
+quantile(CO_CO2_2008_2017_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+quantile(NOx_CO2_2008_2017_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+quantile(SO2_CO2_2008_2017_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+```
+
+```{r}
+# To generate the cuts of values for each dataframe of emission ratios
+CO_CO2_2008_2017_df$cuts <- cut(CO_CO2_2008_2017_df$value, breaks = c(-0.1, -0.05, -0.01, -0.005, 0, 0.005, 0.5),include.lowest = TRUE)
+
+CO_CO2_2008_2017_df
+
+NOx_CO2_2008_2017_df$cuts <- cut(NOx_CO2_2008_2017_df$value, breaks = c(-0.015,-0.0015, -0.001, -0.0005, -0.0001, -0.00005, 0, 0.00005, 0.0001, 0.0005, 0.001, 0.005),include.lowest = TRUE)
+
+NOx_CO2_2008_2017_df
+
+SO2_CO2_2008_2017_df$cuts <- cut(SO2_CO2_2008_2017_df$value, breaks = c(-0.03, -0.0015, -0.001, -0.0005, -0.0001, -0.00005, 0, 0.00005, 0.0001, 0.0005, 0.001, 0.005),include.lowest = TRUE)
+
+SO2_CO2_2008_2017_df
+
+```
+
+
+```{r}
+# 选择2：相对变化程度
+CO_CO2_2008 <- CO_CO2_emission_ratio_stack[[1]]
+CO_CO2_2017 <- CO_CO2_emission_ratio_stack[[10]]
+CO_CO2_relative_change_rate_2008_2017 <- (CO_CO2_2017 - CO_CO2_2008)/ CO_CO2_2008 *100
+
+NOx_CO2_2008 <- NOx_CO2_emission_ratio_stack[[1]]
+NOx_CO2_2017 <- NOx_CO2_emission_ratio_stack[[10]]
+NOx_CO2_relative_change_rate_2008_2017 <- (NOx_CO2_2017 - NOx_CO2_2008)/ NOx_CO2_2008 *100
+
+SO2_CO2_2008 <- SO2_CO2_emission_ratio_stack[[1]]
+SO2_CO2_2017 <- SO2_CO2_emission_ratio_stack[[10]]
+SO2_CO2_relative_change_rate_2008_2017 <- (SO2_CO2_2017 - SO2_CO2_2008)/ SO2_CO2_2008 *100
+```
+
+```{r}
+CO_CO2_relative_change_rate_2008_2017_df <- as.data.frame(CO_CO2_relative_change_rate_2008_2017, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+CO_CO2_relative_change_rate_2008_2017_df
+
+NOx_CO2_relative_change_rate_2008_2017_df <- as.data.frame(NOx_CO2_relative_change_rate_2008_2017, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+NOx_CO2_relative_change_rate_2008_2017_df
+
+SO2_CO2_relative_change_rate_2008_2017_df <- as.data.frame(SO2_CO2_relative_change_rate_2008_2017, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+SO2_CO2_relative_change_rate_2008_2017_df
+```
+
+```{r}
+levels(CO_CO2_relative_change_rate_2008_2017_df$Year)[levels(CO_CO2_relative_change_rate_2008_2017_df$Year)=="relative change"] <- "Relative Change"
+
+# names(CO_CO2_relative_change_rate_2008_2017_df)[names(CO_CO2_relative_change_rate_2008_2017_df)=="variable"]  <- "Year"
+
+CO_CO2_relative_change_rate_2008_2017_df
+
+levels(NOx_CO2_relative_change_rate_2008_2017_df$Year)[levels(NOx_CO2_relative_change_rate_2008_2017_df$Year)=="relative change"] <- "Relative Change"
+
+# names(NOx_CO2_relative_change_rate_2008_2017_df)[names(NOx_CO2_relative_change_rate_2008_2017_df)=="variable"]  <- "Year"
+
+NOx_CO2_relative_change_rate_2008_2017_df
+
+levels(SO2_CO2_relative_change_rate_2008_2017_df$Year)[levels(SO2_CO2_relative_change_rate_2008_2017_df$Year)=="relative change"] <- "Relative Change"
+
+# names(SO2_CO2_relative_change_rate_2008_2017_df)[names(SO2_CO2_relative_change_rate_2008_2017_df)=="variable"]  <- "Year"
+
+SO2_CO2_relative_change_rate_2008_2017_df
+```
+
+```{r}
+quantile(CO_CO2_relative_change_rate_2008_2017_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+quantile(NOx_CO2_relative_change_rate_2008_2017_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+quantile(SO2_CO2_relative_change_rate_2008_2017_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+```
+
+```{r}
+# To generate the cuts of values for each dataframe of emission ratios
+CO_CO2_relative_change_rate_2008_2017_df$cuts <- cut(CO_CO2_relative_change_rate_2008_2017_df$value, breaks = c(-100, -80, -60, -40, -20, 0, 20, 40, 60, 80, 100, 200, 2512),include.lowest = TRUE)
+
+CO_CO2_relative_change_rate_2008_2017_df
+
+NOx_CO2_relative_change_rate_2008_2017_df$cuts <- cut(NOx_CO2_relative_change_rate_2008_2017_df$value, breaks = c(-100, -80, -60, -40, -20, 0, 20, 40, 60, 80, 100, 200),include.lowest = TRUE)
+
+NOx_CO2_relative_change_rate_2008_2017_df
+
+SO2_CO2_relative_change_rate_2008_2017_df$cuts <- cut(SO2_CO2_relative_change_rate_2008_2017_df$value, breaks = c(-100, -80, -60, -40, -20, 0, 20, 40, 60, 80, 100, 200, 239),include.lowest = TRUE)
+
+SO2_CO2_relative_change_rate_2008_2017_df
+
+```
+
+```{r}
+# Plot the relative change
+ CO_CO2_relative_change_plot <- ggplot()+
+  geom_raster(data = CO_CO2_relative_change_rate_2008_2017_df, aes(x = x, y = y, fill = cuts)) + 
+  scale_fill_manual(values = c('#6B9C4F','#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E','#E67C4D', '#D9534F', '#C9302C', '#A32723'), na.value = "transparent", name = 'Relative change \n rate (%)', labels = c('-100 - -80', '-80 - -60', '-60 - -40', '-40 - -20', '-20 - 0', '0 - 20', '20 - 40','40 - 60','60 - 80','80 - 100', '100 - 200', '> 200')) + 
+              xlab("Longitude") + 
+    ylab("Latitude") +
+    theme_gray(base_size = 15) + 
+        geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position="bottom", legend.box = "horizontal",
+        axis.text.x = element_text(size = 20),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) 
+
+SO2_CO2_relative_change_plot <- ggplot()+
+  geom_raster(data = SO2_CO2_relative_change_rate_2008_2017_df, aes(x = x, y = y, fill = cuts)) + 
+  scale_fill_manual(values = c('#6B9C4F','#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E','#E67C4D', '#D9534F', '#C9302C', '#A32723'), na.value = "transparent", name = 'Relative change rate (%)', labels = c('-100 - -80', '-80 - -60', '-60 - -40', '-40 - -20', '-20 - 0', '0 - 20', '20 - 40','40 - 60','60 - 80','80 - 100', '100 - 200', '> 200')) + 
+              xlab("Longitude") + 
+    ylab("Latitude") +
+    theme_gray(base_size = 15) + 
+        geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position="bottom", legend.box = "horizontal",
+        axis.text.x = element_text(size = 20),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) 
+
+NOx_CO2_relative_change_plot <- ggplot()+
+  geom_raster(data = NOx_CO2_relative_change_rate_2008_2017_df, aes(x = x, y = y, fill = cuts)) + 
+  scale_fill_manual(values = c('#6B9C4F','#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E','#E67C4D', '#D9534F', '#C9302C'), na.value = "transparent", name = 'Relative change rate (%)', labels = c('-100 - -80', '-80 - -60', '-60 - -40', '-40 - -20', '-20 - 0', '0 - 20', '20 - 40','40 - 60','60 - 80','80 - 100', '100 - 200')) + 
+              xlab("Longitude") + 
+    ylab("Latitude") +
+    theme_gray(base_size = 15) + 
+        geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position="bottom", legend.box = "horizontal",
+        axis.text.x = element_text(size = 20),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) 
+
+
+```
+
+
+```{r}
+ggarrange(CO_CO2_relative_change_plot, NOx_CO2_relative_change_plot, SO2_CO2_relative_change_plot + rremove("x.text"), 
+          labels = c("A", "B", "C"),common.legend = TRUE, legend = "bottom",
+          ncol = 2, nrow = 2) +
+  theme_bw()
+
+```
+
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/Emission_relative_change_rate_combination.png", scale = 1, width = 12, height = 8, dpi=1000)
+```
+
+
+
+
+```{r}
+# spatial_distribution_SO2_CO2 <- ggplot()+
+ggplot()+
+  geom_raster(data = CO_CO2_2008_2017_df, aes(x = x, y = y, fill = cuts)) + 
+  scale_fill_manual(values = c('#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85', '#FDD771'), na.value = "transparent", name = 'Slope') + 
+              xlab("Longitude") + ylab("Latitude") +
+    theme_gray(base_size = 15) + 
+        geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+  scale_y_continuous(limits = c(17, 58)) +
+    theme( 
+        axis.title.x = element_text(colour="black", size = 16),
+        axis.title.y = element_text(colour="black", size = 16),
+        legend.title = element_text(size = 16),
+        legend.position = "right") 
+
+```
+
+
+
+```{r}
+# spatial_distribution_SO2_CO2 <- ggplot()+
+ggplot()+
+  geom_raster(data = NOx_CO2_2008_2017_df, aes(x = x, y = y, fill = cuts)) + 
+  scale_fill_manual(values = c('#4F7F3E','#6B9C4F','#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E','#E67C4D', '#D9534F'), na.value = "transparent", name = 'Slope') + 
+              xlab("Longitude") + ylab("Latitude") +
+    theme_gray(base_size = 15) + 
+        geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+  scale_y_continuous(limits = c(17, 58)) +
+    theme( 
+        axis.title.x = element_text(colour="black", size = 16),
+        axis.title.y = element_text(colour="black", size = 16),
+        legend.title = element_text(size = 16),
+        legend.position = "right") 
+
+```
+
+
+```{r}
+# spatial_distribution_SO2_CO2 <- ggplot()+
+ggplot()+
+  geom_raster(data = SO2_CO2_2008_2017_df, aes(x = x, y = y, fill = cuts)) + 
+  scale_fill_manual(values = c('#4F7F3E','#6B9C4F','#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E','#E67C4D', '#D9534F'), na.value = "transparent", name = expression(SO[2]/CO[2])) + 
+              xlab("Longitude") + ylab("Latitude") +
+    theme_gray(base_size = 15) + 
+        geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+  scale_y_continuous(limits = c(17, 58)) +
+    theme( 
+        axis.title.x = element_text(colour="black", size = 16),
+        axis.title.y = element_text(colour="black", size = 16),
+        legend.title = element_text(size = 16),
+        legend.position = "right") 
+
+```
+
+
+
+
+
+
+
+```{r}
+################################# PLOT THE PDF FROM 2008 TO 2017 FOR EACH EMISSION RATIOS ################################
+# PDF_CO_CO2 <- CO_CO2_emission_ratio_stack_df %>%
+CO_CO2_emission_ratio_stack_df %>%
+  ggplot( aes(x=value, color=Year, fill = Year)) +
+    geom_density(alpha=0.1, bw = 0.005, size = 0.8)+
+    scale_fill_viridis(discrete=TRUE, option="magma", alpha = 1) +
+    scale_color_viridis(discrete=TRUE, option="magma", alpha = 1) +
+    theme_ipsum() +
+  
+    theme_gray(base_size = 25) + 
+    theme(
+      legend.position="right",
+      panel.spacing = unit(0.1, "lines"),
+      strip.text.x = element_text(size = 20)
+    ) +
+    xlab(expression("CO/CO"[2])) +
+    ylab("Assigned Probability (%)") +
+    theme( 
+        axis.title.x = element_text(colour="black", size = 25),
+        axis.title.y = element_text(colour="black", size = 25),
+        legend.title = element_text(size = 25),
+        legend.position = "right")
+```
+
+```{r}
+ggsave("PDF_CO_CO2.png", scale = 2, width = 6, height = 4, dpi=500)
+```
+
+```{r}
+#PDF_NOx_CO2 <- NOx_CO2_emission_ratio_stack_df %>%
+NOx_CO2_emission_ratio_stack_df %>%
+  ggplot( aes(x=value, color=Year, fill = Year)) +
+    geom_density(alpha=0.1, bw = 0.0005, size = 0.8)+
+    scale_fill_viridis(discrete=TRUE, option="magma", alpha = 1) +
+    scale_color_viridis(discrete=TRUE, option="magma", alpha = 1) +
+    theme_ipsum() +
+    theme_gray(base_size = 25) + 
+    theme(
+      legend.position="right",
+      panel.spacing = unit(0.1, "lines"),
+      strip.text.x = element_text(size = 20)
+    ) +
+    xlab(expression("NO"[x]*"/CO"[2])) +
+    ylab("Assigned Probability (%)") +
+    theme( 
+        axis.title.x = element_text(colour="black", size = 25),
+        axis.title.y = element_text(colour="black", size = 25),
+        legend.title = element_text(size = 25),
+        legend.position = "right")
+```
+
+
+```{r}
+ggsave("PDF_NOx_CO2.png", scale = 2, width = 6, height = 4, dpi=500)
+```
+
+```{r}
+# PDF_SO2_CO2 <- SO2_CO2_emission_ratio_stack_df %>%
+SO2_CO2_emission_ratio_stack_df %>%
+  ggplot( aes(x=value, color=Year, fill = Year)) +
+    geom_density(alpha=0.1,size = 0.8)+
+    scale_fill_viridis(discrete=TRUE, option="magma", alpha = 1) +
+    scale_color_viridis(discrete=TRUE, option="magma", alpha = 1) +
+    theme_ipsum() +
+    theme_gray(base_size = 25) + 
+    theme(
+      legend.position="right",
+      panel.spacing = unit(0.1, "lines"),
+      strip.text.x = element_text(size = 20)
+    ) +
+    xlab(expression("SO"[2]*"/CO"[2])) +
+    ylab("Assigned Probability (%)")+
+    scale_x_continuous(breaks = c(0.00,0.0025, 0.005, 0.0075))+
+    scale_x_continuous(limits = c(0, 0.0075)) +
+    theme( 
+        axis.title.x = element_text(colour="black", size = 25),
+        axis.title.y = element_text(colour="black", size = 25),
+        legend.title = element_text(size = 25),
+        legend.position = "right")
+```
+
+```{r}
+ggsave("PDF_SO2_CO2.png", scale = 2, width = 6, height = 4, dpi=500)
+```
+
+
+```{r}
+
+ggarrange(PDF_CO_CO2, PDF_NOx_CO2, PDF_SO2_CO2 + rremove("x.text"), 
+          labels = c("A", "B", "C"),common.legend = TRUE, legend = "right",
+          ncol = 3, nrow = 1) +
+  theme_bw()
+
+```
+
+
+```{r}
+ggsave("PDF_Emission_Ratios.png", scale = 2, width = 12, height = 4, dpi=500)
+```
+
+
+```{r}
+quantile(CO_CO2_emission_ratio_stack_df$value, probs = c(.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+quantile(NOx_CO2_emission_ratio_stack_df$value, probs = c(.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+quantile(SO2_CO2_emission_ratio_stack_df$value, probs = c(.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+```
+
+```{r}
+# To generate the cuts of values for each dataframe of emission ratios
+CO_CO2_emission_ratio_stack_df$cuts <- cut(CO_CO2_emission_ratio_stack_df$value, breaks = c(0.005, 0.01,0.015,0.02,0.025,0.03,0.035,0.04,0.045,0.05,0.07,0.09),include.lowest = TRUE)
+
+CO_CO2_emission_ratio_stack_df
+
+NOx_CO2_emission_ratio_stack_df$cuts <- cut(NOx_CO2_emission_ratio_stack_df$value, breaks = c(0, 0.002,0.004,0.006,0.008,0.01,0.015),include.lowest = TRUE)
+
+NOx_CO2_emission_ratio_stack_df
+
+SO2_CO2_emission_ratio_stack_df$cuts <- cut(SO2_CO2_emission_ratio_stack_df$value, breaks = c(0, 0.0005, 0.001, 0.0015, 0.002, 0.0025, 0.003,0.004,0.005, 0.01, 0.035),include.lowest = TRUE)
+
+SO2_CO2_emission_ratio_stack_df
+
+```
+
+
+```{r}
+admin_boundary_df <- fortify(admin_boundary, region = "OBJECTID_1")
+
+admin_boundary_df <- rename(admin_boundary_df, OBJECTID_1 = id)
+```
+
+
+```{r}
+#CO_CO2_emission_2008_2017 <- ggplot()+
+ggplot() +
+  geom_raster(data = CO_CO2_emission_ratio_stack_df, aes(x = x, y = y, fill = cuts)) + 
+#              scale_fill_manual(values = c('#FFF5EB','#FFEDD8','#FFE4C4','#FFDAB9','#FFD0AF','#FFC59A','#FFBB8E','#FFAF7E','#FFA07A','#FF9160','#FF7F50'), name = expression(CO/CO[2]), na.value = 'transparent') +
+              scale_fill_brewer(expression(CO/CO[2]),type = "seq", palette = "PiYG", direction = -1) + 
+              xlab("Longitude") + ylab("Latitude") +
+  theme_gray(base_size = 15) + 
+    geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+  scale_y_continuous(limits = c(17, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) +
+  facet_wrap(~Year)
+```
+
+```{r}
+# 最全组合图 - CO
+CO_CO2_emission_ratio_stack_df_2008 <-  CO_CO2_emission_ratio_stack_df %>% filter(Year %in% c(2008))
+
+CO_CO2_emission_ratio_stack_df_2008
+
+CO_CO2_emission_ratio_stack_df_2017 <-  CO_CO2_emission_ratio_stack_df %>% filter(Year %in% c(2017))
+
+CO_CO2_emission_ratio_stack_df_2017
+
+
+CO_CO2_2008 <- ggplot() +
+  geom_raster(data = CO_CO2_emission_ratio_stack_df_2008, aes(x = x, y = y, fill = cuts)) + 
+#              scale_fill_manual(values = c('#FFF5EB','#FFEDD8','#FFE4C4','#FFDAB9','#FFD0AF','#FFC59A','#FFBB8E','#FFAF7E','#FFA07A','#FF9160','#FF7F50'), name = expression(CO/CO[2]), na.value = 'transparent') +
+              scale_fill_brewer(expression(CO/CO[2]),type = "seq", palette = "PiYG", direction = -1) + 
+              xlab("Longitude") + ylab("Latitude") +
+  theme_gray(base_size = 15) + 
+    geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 20),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) 
+
+
+CO_CO2_2017 <- ggplot() +
+  geom_raster(data = CO_CO2_emission_ratio_stack_df_2017, aes(x = x, y = y, fill = cuts)) + 
+#              scale_fill_manual(values = c('#FFF5EB','#FFEDD8','#FFE4C4','#FFDAB9','#FFD0AF','#FFC59A','#FFBB8E','#FFAF7E','#FFA07A','#FF9160','#FF7F50'), name = expression(CO/CO[2]), na.value = 'transparent') +
+              scale_fill_brewer(expression(CO/CO[2]),type = "seq", palette = "PiYG", direction = -1) + 
+              xlab("Longitude") + ylab("Latitude") +
+  theme_gray(base_size = 15) + 
+    geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 20),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) 
+```
+
+
+```{r}
+# 跳过 - 与相对变化进行拼接
+CO_CO2_2008_2017 <- ggplot()+
+  geom_raster(data = CO_CO2_2008_2017_df, aes(x = x, y = y, fill = cuts)) + 
+  scale_fill_manual(values = c('#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85', '#FDD771'), na.value = "transparent", name = 'Difference') + 
+              xlab("Longitude") + ylab("Latitude") +
+    theme_gray(base_size = 15) + 
+        geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 20),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) 
+
+
+```
+
+
+```{r}
+g1 <- ggarrange(CO_CO2_2008, CO_CO2_2017, legend = "right", common.legend = TRUE,
+         ncol = 2, nrow = 1) 
+
+```
+
+
+
+```{r}
+# 最全组合图 - NOx
+NOx_CO2_emission_ratio_stack_df_2008 <- NOx_CO2_emission_ratio_stack_df %>% filter(Year %in% c(2008))
+
+NOx_CO2_emission_ratio_stack_df_2008
+
+NOx_CO2_emission_ratio_stack_df_2017 <-  NOx_CO2_emission_ratio_stack_df %>% filter(Year %in% c(2017))
+
+NOx_CO2_emission_ratio_stack_df_2017
+
+
+NOx_CO2_2008 <- ggplot() +
+  geom_raster(data = NOx_CO2_emission_ratio_stack_df_2008, aes(x = x, y = y, fill = cuts)) + 
+#              scale_fill_manual(values = c('#FFF5EB','#FFEDD8','#FFE4C4','#FFDAB9','#FFD0AF','#FFC59A','#FFBB8E','#FFAF7E','#FFA07A','#FF9160','#FF7F50'), name = expression(CO/CO[2]), na.value = 'transparent') +
+              scale_fill_brewer(expression(NO[x]/CO[2]),type = "seq", palette = "PiYG", direction = -1) + 
+              xlab("Longitude") + ylab("Latitude") +
+  theme_gray(base_size = 15) + 
+    geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 20),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) 
+
+
+NOx_CO2_2017 <- ggplot() +
+  geom_raster(data = NOx_CO2_emission_ratio_stack_df_2017, aes(x = x, y = y, fill = cuts)) + 
+#              scale_fill_manual(values = c('#FFF5EB','#FFEDD8','#FFE4C4','#FFDAB9','#FFD0AF','#FFC59A','#FFBB8E','#FFAF7E','#FFA07A','#FF9160','#FF7F50'), name = expression(CO/CO[2]), na.value = 'transparent') +
+              scale_fill_brewer(expression(NO[x]/CO[2]),type = "seq", palette = "PiYG", direction = -1) + 
+              xlab("Longitude") + ylab("Latitude") +
+  theme_gray(base_size = 15) + 
+    geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 20),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) 
+```
+
+
+```{r}
+
+NOx_CO2_2008_2017 <- ggplot()+
+  geom_raster(data = NOx_CO2_2008_2017_df, aes(x = x, y = y, fill = cuts)) + 
+  scale_fill_manual(values = c('#4F7F3E','#6B9C4F','#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E','#E67C4D', '#D9534F'), na.value = "transparent", name = 'Difference') + 
+              xlab("Longitude") + ylab("Latitude") +
+    theme_gray(base_size = 15) + 
+        geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+  scale_y_continuous(limits = c(17, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 20),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) 
+
+
+```
+
+```{r}
+g2 <- ggarrange(NOx_CO2_2008, NOx_CO2_2017,  
+          legend = "right", common.legend = TRUE,
+         ncol = 2, nrow = 1) 
+
+```
+
+
+
+```{r}
+
+ggarrange(NOx_CO2_2008, NOx_CO2_2017,  + rremove("x.text"), 
+          labels = c("A", "B", "C"),legend = "right",
+          ncol = 3, nrow = 1) 
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/combination_NOx_CO2.png", scale = 1.2, width = 30, height = 6, dpi=500)
+```
+
+
+
+```{r}
+# 最全组合图 - SO2
+SO2_CO2_emission_ratio_stack_df_2008 <- SO2_CO2_emission_ratio_stack_df %>% filter(Year %in% c(2008))
+
+SO2_CO2_emission_ratio_stack_df_2008
+
+SO2_CO2_emission_ratio_stack_df_2017 <- SO2_CO2_emission_ratio_stack_df %>% filter(Year %in% c(2017))
+
+SO2_CO2_emission_ratio_stack_df_2017
+
+
+
+SO2_CO2_2008 <- ggplot() +
+  geom_raster(data = SO2_CO2_emission_ratio_stack_df_2008, aes(x = x, y = y, fill = cuts)) + 
+#              scale_fill_manual(values = c('#FFF5EB','#FFEDD8','#FFE4C4','#FFDAB9','#FFD0AF','#FFC59A','#FFBB8E','#FFAF7E','#FFA07A','#FF9160','#FF7F50'), name = expression(CO/CO[2]), na.value = 'transparent') +
+              scale_fill_brewer(expression(SO[2]/CO[2]),type = "seq", palette = "PiYG", direction = -1) + 
+              xlab("Longitude") + ylab("Latitude") +
+  theme_gray(base_size = 15) + 
+    geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 20),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) 
+
+
+SO2_CO2_2017 <- ggplot() +
+  geom_raster(data = SO2_CO2_emission_ratio_stack_df_2017, aes(x = x, y = y, fill = cuts)) + 
+#              scale_fill_manual(values = c('#FFF5EB','#FFEDD8','#FFE4C4','#FFDAB9','#FFD0AF','#FFC59A','#FFBB8E','#FFAF7E','#FFA07A','#FF9160','#FF7F50'), name = expression(CO/CO[2]), na.value = 'transparent') +
+              scale_fill_brewer(expression(SO[2]/CO[2]),type = "seq", palette = "PiYG", direction = -1) + 
+              xlab("Longitude") + ylab("Latitude") +
+  theme_gray(base_size = 15) + 
+    geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 20),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) 
+```
+
+
+```{r}
+
+SO2_CO2_2008_2017 <- ggplot()+
+  geom_raster(data = NOx_CO2_2008_2017_df, aes(x = x, y = y, fill = cuts)) + 
+  scale_fill_manual(values = c('#4F7F3E','#6B9C4F','#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E','#E67C4D', '#D9534F'), na.value = "transparent", name = 'Difference') + 
+              xlab("Longitude") + ylab("Latitude") +
+    theme_gray(base_size = 15) + 
+        geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+  scale_y_continuous(limits = c(17, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 20),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) 
+
+
+```
+
+```{r}
+g3 <- ggarrange(SO2_CO2_2008, SO2_CO2_2017, 
+          legend = "right", common.legend = TRUE,
+         ncol = 2, nrow = 1) 
+
+```
+
+
+```{r}
+
+ggarrange(SO2_CO2_2008, SO2_CO2_2017, SO2_CO2_2008_2017 + rremove("x.text"), 
+          labels = c("A", "B", "C"),legend = "right",
+          ncol = 3, nrow = 1) 
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/combination_SO2_CO2.png", scale = 1.2, width = 30, height = 6, dpi=500)
+```
+
+
+```{r}
+# 另一种画法
+# NOx_CO2_emission_2008_2017 <- ggplot()+
+ggplot() +
+  geom_raster(data = NOx_CO2_emission_ratio_stack_df_2, aes(x = x, y = y, fill = cuts)) + 
+               scale_fill_manual(values = c('#FFF5EB','#FFDAB9','#FFC59A','#FFAF7E','#FFA07A','#FF9160','#FF7F50'), name = expression(NO[x]/CO[2]), na.value = 'transparent') +
+              xlab("Longitude") + ylab("Latitude") +
+    theme_gray(base_size = 15) + 
+      geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+  scale_y_continuous(limits = c(17, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) +
+  facet_wrap(~Year)
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/spatial_distribution_NOx_CO2.png", scale = 2, width = 9, height = 4, dpi=500)
+```
+
+
+
+```{r}
+SO2_CO2_emission_ratio_stack_df_2 <-  SO2_CO2_emission_ratio_stack_df %>% filter(Year %in% c(2008, 2017))
+
+SO2_CO2_emission_ratio_stack_df_2
+```
+
+
+```{r}
+# spatial_distribution_SO2_CO2 <- ggplot()+
+ggplot()+
+  geom_raster(data = SO2_CO2_emission_ratio_stack_df_2, aes(x = x, y = y, fill = cuts)) + 
+              scale_fill_manual(values = c('#FFF5EB','#FFEDD8','#FFE4C4','#FFDAB9','#FFD0AF','#FFC59A','#FFBB8E','#FFAF7E','#FFA07A','#FF9160','#FF7F50'), name = expression(SO[2]/CO[2]), na.value = 'transparent') +
+              xlab("Longitude") + ylab("Latitude") +
+    theme_gray(base_size = 15) + 
+        geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+  scale_y_continuous(limits = c(17, 58)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1)) +
+  facet_wrap(~Year)
+
+```
+
+
+```{r}
+ggsave("spatial_distribution_SO2_CO2.png", scale = 2, width = 6, height = 4, dpi=500)
+```
+
+
+```{r}
+
+ggarrange(spatial_distribution_CO_CO2, spatial_distribution_NOx_CO2, spatial_distribution_SO2_CO2 + rremove("x.text"), 
+          labels = c("A", "B", "C"),legend = "right",
+          ncol = 3, nrow = 1) +
+  theme_bw()
+
+```
+
+
+```{r}
+ggsave("spatial_distribution_emission ratio.png", scale = 1.5, width = 20, height = 4, dpi=500)
+```
+
+
+
+```{r}
+
+ggarrange(spatial_distribution_CO_CO2, spatial_distribution_NOx_CO2, spatial_distribution_SO2_CO2, PDF_CO_CO2, PDF_NOx_CO2, PDF_SO2_CO2 + rremove("x.text"), 
+          labels = c("A", "B", "C","D","E","F"),legend = "right",
+          ncol = 3, nrow = 2) +
+  theme_bw()
+
+```
+
+```{r}
+ggsave("spatial_distribution_emission ratio_with_PDF.png", scale = 2, width = 24, height = 10, dpi=500)
+```
+
+
+
+```{r}
+writeRaster(CO_CO2_emission_ratio_stack, file = "D:/12. Paper 1/R_Output/CO_CO2_emission_ratio_stack.grd")
+writeRaster(NOx_CO2_emission_ratio_stack, file = "D:/12. Paper 1/R_Output/NOx_CO2_emission_ratio_stack.grd")
+writeRaster(SO2_CO2_emission_ratio_stack, file = "D:/12. Paper 1/R_Output/SO2_CO2_emission_ratio_stack.grd")
+```
+
+```{r}
+g4 <- ggarrange(CO_CO2_relative_change_plot,NOx_CO2_relative_change_plot,SO2_CO2_relative_change_plot , 
+          legend = "right", common.legend = TRUE,
+         ncol = 1, nrow = 3) 
+```
+
+```{r}
+g5 <- ggarrange(g1, g2, g3 + rremove("x.text"), 
+          legend = "bottom", 
+         ncol = 1, nrow = 3) 
+```
+
+
+
+```{r}
+# 图像最终拼接工作
+
+ggarrange(g5, g4, ncol = 2, nrow = 1, widths = c(5,2.5))
+
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/RC-1.png", g4, scale = 1.2, width = 7, height = 12, dpi=900, limitsize = FALSE)
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/RC-2.png", g5, scale = 1.2, width = 12, height = 12, dpi=900, limitsize = FALSE)
+```
+
+
+# 2. Linear regression analysis - Pixel-wise 
+
+
+```{r}
+# Linear regression analysis - pixel-wise regression between two raster time series
+
+CO_CO2_emission_stack <- stack(CO_emission_stack, CO2_emission_stack)
+NOx_CO2_emission_stack <- stack(NOx_emission_stack, CO2_emission_stack)
+SO2_CO2_emission_stack <- stack(SO2_emission_stack, CO2_emission_stack)
+
+# Function
+fun_linear_slope = function(x) { if (is.na(x[1])){ NA } else { lm(x[1:10] ~ x[11:20])$coefficients[2] }}
+
+fun_linear_intercept = function(x) { if (is.na(x[1])){ NA } else { lm(x[1:10] ~ x[11:20])$coefficients[1] }}
+
+fun_linear_p_value = function(x) { if (is.na(x[1])){ NA } else { m <- lm(x[1:10] ~ x[11:20]);summary(m)$coefficients[8] }}
+
+fun_linear_r_squared = function(x) { if (is.na(x[1])){ NA } else { m <- lm(x[1:10] ~ x[11:20]);summary(m)$r.squared }}
+
+
+# CO & CO2
+CO_CO2_linear_slope <- calc(CO_CO2_emission_stack, fun_linear_slope)
+
+CO_CO2_linear_intercept <- calc(CO_CO2_emission_stack, fun_linear_intercept)
+
+CO_CO2_linear_r_squared <- calc(CO_CO2_emission_stack, fun_linear_r_squared)
+
+CO_CO2_linear_p_value <- calc(CO_CO2_emission_stack, fun_linear_p_value)
+
+
+# NOx & CO2
+NOx_CO2_linear_slope <- calc(NOx_CO2_emission_stack, fun_linear_slope)
+
+NOx_CO2_linear_intercept <- calc(NOx_CO2_emission_stack, fun_linear_intercept)
+
+NOx_CO2_linear_r_squared <- calc(NOx_CO2_emission_stack, fun_linear_r_squared)
+
+NOx_CO2_linear_p_value <- calc(NOx_CO2_emission_stack, fun_linear_p_value)
+
+
+# SO2 & CO2
+SO2_CO2_linear_slope <- calc(SO2_CO2_emission_stack, fun_linear_slope)
+
+SO2_CO2_linear_intercept <- calc(SO2_CO2_emission_stack, fun_linear_intercept)
+
+SO2_CO2_linear_r_squared <- calc(SO2_CO2_emission_stack, fun_linear_r_squared)
+
+SO2_CO2_linear_p_value <- calc(SO2_CO2_emission_stack, fun_linear_p_value)
+```
+
+
+```{r}
+writeRaster(CO_CO2_linear_slope, file = "D:/12. Paper 1/R_Output/CO_CO2_linear-regression_slope_without_confidence.grd",overwrite = TRUE)
+writeRaster(NOx_CO2_linear_slope, file = "D:/12. Paper 1/R_Output/NOx_CO2_linear-regression_slope_without_confidence.grd",overwrite = TRUE)
+writeRaster(SO2_CO2_linear_slope, file = "D:/12. Paper 1/R_Output/SO2_CO2_linear-regression_slope_without_confidence.grd",overwrite = TRUE)
+```
+
+
+
+```{r}
+
+# CO & CO2
+CO_CO2_slope_df <- as.data.frame(CO_CO2_linear_slope, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+
+CO_CO2_slope_df$cuts <- cut(CO_CO2_slope_df$value, breaks = c(-0.04, -0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06),include.lowest = TRUE)
+
+levels(CO_CO2_slope_df$variable)[levels(CO_CO2_slope_df$variable)=="layer"] <- "CO/CO2"
+
+names(CO_CO2_slope_df)[names(CO_CO2_slope_df)=="variable"]  <- "Emission_Ratio"
+
+CO_CO2_slope_df
+
+
+# NOx & CO2
+NOx_CO2_slope_df <- as.data.frame(NOx_CO2_linear_slope, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+
+NOx_CO2_slope_df$cuts <- cut(NOx_CO2_slope_df$value, breaks = c(-0.04, -0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06),include.lowest = TRUE)
+
+levels(NOx_CO2_slope_df$variable)[levels(NOx_CO2_slope_df$variable)=="layer"] <- "NOx/CO2"
+
+names(NOx_CO2_slope_df)[names(NOx_CO2_slope_df)=="variable"]  <- "Emission_Ratio"
+
+NOx_CO2_slope_df
+
+# SO2 & CO2
+SO2_CO2_slope_df <- as.data.frame(SO2_CO2_linear_slope, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+
+SO2_CO2_slope_df$cuts <- cut(SO2_CO2_slope_df$value, breaks = c(-0.04, -0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06),include.lowest = TRUE)
+
+levels(SO2_CO2_slope_df$variable)[levels(SO2_CO2_slope_df$variable)=="layer"] <- "SO2/CO2"
+
+names(SO2_CO2_slope_df)[names(SO2_CO2_slope_df)=="variable"]  <- "Emission_Ratio"
+
+SO2_CO2_slope_df
+
+```
+
+```{r}
+admin_boundary_df <- fortify(admin_boundary, region = "OBJECTID_1")
+
+admin_boundary_df <- rename(admin_boundary_df, OBJECTID_1 = id)
+```
+
+
+```{r}
+# Mask p_value > 0.05 and get a confidence level of 95% - p值越小，拒绝原假设的理由越充分
+m = c(0, 0.05, 1, 0.05, 1, 0)
+rclmat = matrix(m, ncol=3, byrow=TRUE)
+fun = function(x) { x[x<1] <- NA; return(x)}
+
+# CO_CO2
+CO_CO2_p_mask = reclassify(CO_CO2_linear_p_value, rclmat)
+CO_CO2_p_mask_NA = calc(CO_CO2_p_mask, fun)
+
+# NOx_CO2
+NOx_CO2_p_mask = reclassify(NOx_CO2_linear_p_value, rclmat)
+NOx_CO2_p_mask_NA = calc(NOx_CO2_p_mask, fun)
+
+# SO2_CO2
+SO2_CO2_p_mask = reclassify(SO2_CO2_linear_p_value, rclmat)
+SO2_CO2_p_mask_NA = calc(SO2_CO2_p_mask, fun)
+```
+
+
+```{r}
+
+CO_CO2_trend_sig = mask(CO_CO2_linear_slope, CO_CO2_p_mask_NA)
+
+NOx_CO2_trend_sig = mask(NOx_CO2_linear_slope, NOx_CO2_p_mask_NA)
+
+SO2_CO2_trend_sig = mask(SO2_CO2_linear_slope, SO2_CO2_p_mask_NA)
+
+```
+
+
+```{r}
+writeRaster(CO_CO2_trend_sig, file = "D:/12. Paper 1/R_Output/CO_CO2_linear-regression_slope_with_95_confidence.grd",overwrite = TRUE)
+writeRaster(NOx_CO2_trend_sig, file = "D:/12. Paper 1/R_Output/NOx_CO2_linear-regression_slope_with_95_confidence.grd",overwrite = TRUE)
+writeRaster(SO2_CO2_trend_sig, file = "D:/12. Paper 1/R_Output/SO2_CO2_linear-regression_slope_with_95_confidence.grd",overwrite = TRUE)
+```
+
+```{r}
+CO_CO2_trend_sig <- raster("F:/12. Paper 1/R_Output/CO_CO2_linear-regression_slope_with_95_confidence.grd")
+NOx_CO2_trend_sig <- raster("F:/12. Paper 1/R_Output/NOx_CO2_linear-regression_slope_with_95_confidence.grd")
+SO2_CO2_trend_sig <- raster("F:/12. Paper 1/R_Output/SO2_CO2_linear-regression_slope_with_95_confidence.grd")
+
+crs(CO_CO2_trend_sig) <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"
+crs(NOx_CO2_trend_sig) <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"
+crs(SO2_CO2_trend_sig) <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"
+```
+
+```{r}
+# PLOT SLOPE OF LINEAR REGRESSION RESULT - WITH 95% CONFIDENCE INTERVAL
+
+# CO_CO2
+CO_CO2_slope_with_confidence_df <- as.data.frame(CO_CO2_trend_sig, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+CO_CO2_slope_with_confidence_df
+
+# NOx_CO2
+NOx_CO2_slope_with_confidence_df <- as.data.frame(NOx_CO2_trend_sig, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+NOx_CO2_slope_with_confidence_df
+
+# SO2_CO2
+SO2_CO2_slope_with_confidence_df <- as.data.frame(SO2_CO2_trend_sig, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+SO2_CO2_slope_with_confidence_df
+```
+
+```{r}
+quantile(CO_CO2_slope_with_confidence_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+quantile(NOx_CO2_slope_with_confidence_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+quantile(SO2_CO2_slope_with_confidence_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+```
+
+
+
+```{r}
+
+# CO_CO2
+CO_CO2_slope_with_confidence_df$cuts <- cut(CO_CO2_slope_with_confidence_df$value, breaks = c(-0.15, -0.10, -0.05, -0.005, 0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.25),include.lowest = TRUE)
+
+levels(CO_CO2_slope_with_confidence_df$variable)[levels(CO_CO2_slope_with_confidence_df$variable)=="layer"] <- "CO/CO2"
+
+names(CO_CO2_slope_with_confidence_df)[names(CO_CO2_slope_with_confidence_df)=="variable"]  <- "slope"
+
+CO_CO2_slope_with_confidence_df
+
+
+# NOx_CO2
+NOx_CO2_slope_with_confidence_df$cuts <- cut(NOx_CO2_slope_with_confidence_df$value, breaks = c(-0.01, -0.005, 0, 0.001, 0.002, 0.003, 0.004, 0.005, 0.05),include.lowest = TRUE)
+
+levels(NOx_CO2_slope_with_confidence_df$variable)[levels(NOx_CO2_slope_with_confidence_df$variable)=="layer"] <- "NOx/CO2"
+
+names(NOx_CO2_slope_with_confidence_df)[names(NOx_CO2_slope_with_confidence_df)=="variable"]  <- "Slope"
+
+NOx_CO2_slope_with_confidence_df
+
+# SO2_CO2
+SO2_CO2_slope_with_confidence_df$cuts <- cut(SO2_CO2_slope_with_confidence_df$value, breaks = c(-0.03, -0.015, 0, 0.0001, 0.0005, 0.001, 0.002, 0.003, 0.004, 0.005, 0.06),include.lowest = TRUE)
+
+levels(SO2_CO2_slope_with_confidence_df$variable)[levels(SO2_CO2_slope_with_confidence_df$variable)=="layer"] <- "SO2/CO2"
+
+names(SO2_CO2_slope_with_confidence_df)[names(SO2_CO2_slope_with_confidence_df)=="variable"]  <- "slope"
+
+SO2_CO2_slope_with_confidence_df
+
+```
+
+
+
+```{r}
+# CO_CO2_slope_with_significance <- ggplot()+
+ggplot()+
+  geom_raster(data = CO_CO2_slope_with_confidence_df, aes(x = x, y = y, fill = cuts)) + 
+              scale_fill_manual(values = c('#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E','#E67C4D', '#D9534F', '#D53E4F'), na.value = "transparent", name = 'Slope') + 
+              xlab("Longitude") + 
+              ylab("Latitude") +
+  geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+      geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 55)) +
+#  theme_gray(base_size = 15) + 
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1))
+
+```
+
+
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/emission_ratios_slope_with_confidence_CO.png", scale = 1, width = 10, height = 6, dpi=600)
+```
+
+
+```{r}
+# NOx_CO2_slope_with_significance <- ggplot()+
+NOx_CO2_slope_with_significance <- ggplot()+
+  geom_raster(data = NOx_CO2_slope_with_confidence_df, aes(x = x, y = y, fill = cuts)) + 
+              scale_fill_manual(values = c( '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E','#E67C4D', '#D9534F', '#D53E4F'), na.value = "transparent", name = 'Slope') + 
+              xlab("Longitude") + 
+              ylab("Latitude") +
+  geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+      geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 55)) +
+#  theme_gray(base_size = 15) + 
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1))
+```
+
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/emission_ratios_slope_with_confidence_NOx.png", scale = 1, width = 10, height = 6, dpi=600)
+```
+
+
+```{r}
+#SO2_CO2_slope_with_significance <- 
+SO2_CO2_slope_with_significance <- ggplot()+
+  geom_raster(data = SO2_CO2_slope_with_confidence_df, aes(x = x, y = y, fill = cuts)) + 
+              scale_fill_manual(values = c( '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E','#E67C4D', '#D9534F', '#D53E4F','#B43340','#943139'), na.value = "transparent", name = 'Slope') + 
+              xlab("Longitude") + 
+              ylab("Latitude") +
+  geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+      geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 55)) +
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1))
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/emission_ratios_slope_with_confidence_SO2.png", scale = 1, width = 10, height = 6, dpi=600)
+```
+
+
+```{r}
+
+ggarrange(CO_CO2_slope_with_significance,NOx_CO2_slope_with_significance, SO2_CO2_slope_with_significance + rremove("x.text"), 
+          labels = c("A", "B", "C"),legend = "right",
+          ncol = 2, nrow = 2, text.size = 30)
+```
+
+
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/emission_ratios_slope_with_confidence_2.png", scale = 1.3, width = 15, height = 10, dpi=1000)
+```
+
+
+
+# 3. Time series trend analysis - Kendall tau statistic and the Theil-Sen slope modification
+
+```{r}
+CO_CO2_emission_ratio_stack <- stack(CO_CO2_emission_ratio_stack)
+
+NOx_CO2_emission_ratio_stack <- stack(NOx_CO2_emission_ratio_stack)
+
+SO2_CO2_emission_ratio_stack <- stack(SO2_CO2_emission_ratio_stack)
+
+```
+
+
+```{r}
+############################# TIME-SERIES ANALYSIS - SEN'S SLOPE AND MANKELL  ######################################
+# Calculates a nonparametric statistic for a monotonic trend based on the Kendall tau statistic and the Theil-Sen slope modification - 95% confidence level
+# Output:
+## raster layer 1 slope for trend, always returned
+## raster layer 2 intercept for trend if intercept TRUE
+## raster layer 3 p value for trend fit if p.value TRUE
+## raster layer 4 z value for trend fit if z.value TRUE
+## raster layer 5 lower confidence level at 95 pct, if confidence TRUE
+## raster layer 6 upper confidence level at 95 pct, if confidence TRUE
+## raster layer 7 Kendall's tau two-sided test, reject null at 0, if tau TRUE
+
+library(spatialEco)
+
+CO_CO2_kendall_raster_ratio_trend <- raster.kendall(CO_CO2_emission_ratio_stack, p.value=TRUE, z.value=TRUE, intercept=TRUE, confidence=TRUE, tau=TRUE)
+
+summary(CO_CO2_kendall_raster_ratio_trend)
+
+
+
+NOx_CO2_kendall_raster_ratio_trend <- raster.kendall(NOx_CO2_emission_ratio_stack, p.value=TRUE, z.value=TRUE, intercept=TRUE, confidence=TRUE, tau=TRUE)
+
+summary(NOx_CO2_kendall_raster_ratio_trend)
+
+
+SO2_CO2_kendall_raster_ratio_trend <- raster.kendall(SO2_CO2_emission_ratio_stack, p.value=TRUE, z.value=TRUE, intercept=TRUE, confidence=TRUE, tau=TRUE)
+
+summary(SO2_CO2_kendall_raster_ratio_trend)
+```
+
+
+
+```{r}
+# To mask slope map + tau map by z_score map
+# Mask p_value > 0.05 and get a confidence level of 95% - p值越小，拒绝原假设的理由越充分
+CO_CO2_z_value_Mann_Sen <- CO_CO2_kendall_raster_ratio_trend$p.value
+CO_CO2_slope_Mann_Sen <- CO_CO2_kendall_raster_ratio_trend$slope
+CO_CO2_tau_Mann_Sen <- CO_CO2_kendall_raster_ratio_trend$tau
+
+
+NOx_CO2_z_value_Mann_Sen <- NOx_CO2_kendall_raster_ratio_trend$p.value
+NOx_CO2_slope_Mann_Sen <- NOx_CO2_kendall_raster_ratio_trend$slope
+NOx_CO2_tau_Mann_Sen <- NOx_CO2_kendall_raster_ratio_trend$tau
+
+
+SO2_CO2_z_value_Mann_Sen <- SO2_CO2_kendall_raster_ratio_trend$p.value
+SO2_CO2_slope_Mann_Sen <- SO2_CO2_kendall_raster_ratio_trend$slope
+SO2_CO2_tau_Mann_Sen <- SO2_CO2_kendall_raster_ratio_trend$tau
+```
+
+
+
+```{r}
+m = c(-4, -1.96, 1, -1.96, 1.96, 0, 1.96,4,1)
+rclmat = matrix(m, ncol=3, byrow=TRUE)
+fun_trend = function(x) { x[x<1] <- NA; return(x)}
+
+# CO_CO2
+CO_CO2_p_mask_Mann_Sen_trend = reclassify(CO_CO2_z_value_Mann_Sen, rclmat)
+CO_CO2_p_mask_NA_Mann_Sen_trend = calc(CO_CO2_p_mask_Mann_Sen_trend, fun_trend)
+
+
+# NOx_CO2
+NOx_CO2_p_mask_Mann_Sen_trend = reclassify(NOx_CO2_z_value_Mann_Sen, rclmat)
+NOx_CO2_p_mask_NA_Mann_Sen_trend = calc(NOx_CO2_p_mask_Mann_Sen_trend, fun_trend)
+
+
+# SO2_CO2
+SO2_CO2_p_mask_Mann_Sen_trend = reclassify(SO2_CO2_z_value_Mann_Sen, rclmat)
+SO2_CO2_p_mask_NA_Mann_Sen_trend = calc(SO2_CO2_p_mask_Mann_Sen_trend, fun_trend)
+```
+
+```{r}
+# CO_CO2
+CO_CO2_trend_sig_Mann_Sen_trend_tau = mask(CO_CO2_tau_Mann_Sen, CO_CO2_p_mask_NA_Mann_Sen_trend)
+CO_CO2_trend_sig_Mann_Sen_trend_slope = mask(CO_CO2_slope_Mann_Sen, CO_CO2_p_mask_NA_Mann_Sen_trend)
+
+# NOx_CO2
+NOx_CO2_trend_sig_Mann_Sen_trend_tau = mask(NOx_CO2_tau_Mann_Sen, NOx_CO2_p_mask_NA_Mann_Sen_trend)
+NOx_CO2_trend_sig_Mann_Sen_trend_slope = mask(NOx_CO2_slope_Mann_Sen, NOx_CO2_p_mask_NA_Mann_Sen_trend)
+
+# SO2_CO2
+SO2_CO2_trend_sig_Mann_Sen_trend_tau = mask(SO2_CO2_tau_Mann_Sen, SO2_CO2_p_mask_NA_Mann_Sen_trend)
+SO2_CO2_trend_sig_Mann_Sen_trend_slope = mask(SO2_CO2_slope_Mann_Sen, SO2_CO2_p_mask_NA_Mann_Sen_trend)
+```
+
+
+
+```{r}
+summary(CO_CO2_trend_sig_Mann_Sen_trend_tau)
+summary(CO_CO2_trend_sig_Mann_Sen_trend_slope)
+
+summary(NOx_CO2_trend_sig_Mann_Sen_trend_tau)
+summary(NOx_CO2_trend_sig_Mann_Sen_trend_slope)
+
+summary(SO2_CO2_trend_sig_Mann_Sen_trend_tau)
+summary(SO2_CO2_trend_sig_Mann_Sen_trend_slope)
+```
+
+
+```{r}
+writeRaster(CO_CO2_trend_sig_Mann_Sen_trend_tau, file = "D:/12. Paper 1/R_Output/CO_CO2_MK_tau_with_confidence.grd",overwrite = TRUE)
+writeRaster(NOx_CO2_trend_sig_Mann_Sen_trend_tau, file = "D:/12. Paper 1/R_Output/NOx_CO2_MK_tau_with_confidence.grd",overwrite = TRUE)
+writeRaster(SO2_CO2_trend_sig_Mann_Sen_trend_tau, file = "D:/12. Paper 1/R_Output/SO2_CO2_MK_tau_with_confidence.grd",overwrite = TRUE)
+
+writeRaster(CO_CO2_trend_sig_Mann_Sen_trend_slope, file = "D:/12. Paper 1/R_Output/CO_CO2_MK_SLOPE_with_confidence.grd",overwrite = TRUE)
+writeRaster(NOx_CO2_trend_sig_Mann_Sen_trend_slope, file = "D:/12. Paper 1/R_Output/NOx_CO2_MK_SLOPE_with_confidence.grd",overwrite = TRUE)
+writeRaster(SO2_CO2_trend_sig_Mann_Sen_trend_slope, file = "D:/12. Paper 1/R_Output/SO2_CO2_MK_SLOPE_with_confidence.grd",overwrite = TRUE)
+```
+
+```{r}
+CO_CO2_trend_sig_Mann_Sen_trend_tau <- raster("F:/12. Paper 1/R_Output/CO_CO2_MK_tau_with_confidence.grd")
+NOx_CO2_trend_sig_Mann_Sen_trend_tau <- raster("F:/12. Paper 1/R_Output/NOx_CO2_MK_tau_with_confidence.grd")
+SO2_CO2_trend_sig_Mann_Sen_trend_tau <- raster("F:/12. Paper 1/R_Output/SO2_CO2_MK_tau_with_confidence.grd")
+
+CO_CO2_trend_sig_Mann_Sen_trend_slope <- raster("F:/12. Paper 1/R_Output/CO_CO2_MK_SLOPE_with_confidence.grd")
+NOx_CO2_trend_sig_Mann_Sen_trend_slope <- raster("F:/12. Paper 1/R_Output/NOx_CO2_MK_SLOPE_with_confidence.grd")
+SO2_CO2_trend_sig_Mann_Sen_trend_slope <- raster("F:/12. Paper 1/R_Output/SO2_CO2_MK_SLOPE_with_confidence.grd")
+```
+
+
+
+```{r}
+# TAU
+CO_CO2_MK_tau_with_confidence_df <- as.data.frame(CO_CO2_trend_sig_Mann_Sen_trend_tau, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+CO_CO2_MK_tau_with_confidence_df
+
+NOx_CO2_MK_tau_with_confidence_df <- as.data.frame(NOx_CO2_trend_sig_Mann_Sen_trend_tau, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+NOx_CO2_MK_tau_with_confidence_df
+
+SO2_CO2_MK_tau_with_confidence_df <- as.data.frame(SO2_CO2_trend_sig_Mann_Sen_trend_tau, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+SO2_CO2_MK_tau_with_confidence_df
+
+# SLOPE
+CO_CO2_MK_slope_with_confidence_df <- as.data.frame(CO_CO2_trend_sig_Mann_Sen_trend_slope, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+CO_CO2_MK_slope_with_confidence_df 
+
+
+NOx_CO2_MK_slope_with_confidence_df <- as.data.frame(NOx_CO2_trend_sig_Mann_Sen_trend_slope, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+NOx_CO2_MK_slope_with_confidence_df
+
+
+SO2_CO2_MK_slope_with_confidence_df <- as.data.frame(SO2_CO2_trend_sig_Mann_Sen_trend_slope, xy = TRUE) %>%
+  melt(id.vars = c('x','y'))
+SO2_CO2_MK_slope_with_confidence_df
+```
+
+
+```{r}
+
+quantile(CO_CO2_MK_tau_with_confidence_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+quantile(NOx_CO2_MK_tau_with_confidence_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+quantile(SO2_CO2_MK_tau_with_confidence_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+
+quantile(CO_CO2_MK_slope_with_confidence_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+quantile(NOx_CO2_MK_slope_with_confidence_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+quantile(SO2_CO2_MK_slope_with_confidence_df$value, probs = c(0,.25, .5, .75, .80, .85, .90, .95, .99, .998, .999, 1), na.rm = TRUE)
+
+```
+
+
+```{r}
+# TAU 
+CO_CO2_MK_tau_with_confidence_df$cuts <- cut(CO_CO2_MK_tau_with_confidence_df$value, breaks = c(-1,-0.8,-0.6,-0.4,-0.2,0,0.2,0.4,0.6,0.8,1), include.lowest = TRUE)
+
+levels(CO_CO2_MK_tau_with_confidence_df$variable)[levels(CO_CO2_MK_tau_with_confidence_df$variable)=="layer"] <- "CO/CO2"
+
+names(CO_CO2_MK_tau_with_confidence_df)[names(CO_CO2_MK_tau_with_confidence_df)=="variable"]  <- "Tau"
+
+CO_CO2_MK_tau_with_confidence_df
+
+
+
+NOx_CO2_MK_tau_with_confidence_df$cuts <- cut(NOx_CO2_MK_tau_with_confidence_df$value, breaks = c(-1,-0.8,-0.6,-0.4,-0.2,0,0.2,0.4,0.6,0.8,1), include.lowest = TRUE)
+
+levels(NOx_CO2_MK_tau_with_confidence_df$variable)[levels(NOx_CO2_MK_tau_with_confidence_df$variable)=="layer"] <- "NOx/CO2"
+
+names(NOx_CO2_MK_tau_with_confidence_df)[names(NOx_CO2_MK_tau_with_confidence_df)=="variable"]  <- "Tau"
+
+NOx_CO2_MK_tau_with_confidence_df
+
+
+
+SO2_CO2_MK_tau_with_confidence_df$cuts <- cut(SO2_CO2_MK_tau_with_confidence_df$value, breaks = c(-1,-0.8,-0.6,-0.4,-0.2,0,0.2,0.4,0.6,0.8,1), include.lowest = TRUE)
+
+levels(SO2_CO2_MK_tau_with_confidence_df$variable)[levels(SO2_CO2_MK_tau_with_confidence_df$variable)=="layer"] <- "SO2/CO2"
+
+names(SO2_CO2_MK_tau_with_confidence_df)[names(SO2_CO2_MK_tau_with_confidence_df)=="variable"]  <- "Tau"
+
+SO2_CO2_MK_tau_with_confidence_df
+
+
+# sLOPE
+CO_CO2_MK_slope_with_confidence_df$cuts <- cut(CO_CO2_MK_slope_with_confidence_df$value, breaks = c(-0.010, -0.008, -0.006, -0.004, -0.002, 0, 0.002, 0.004, 0.006, 0.008), include.lowest = TRUE)
+
+levels(CO_CO2_MK_slope_with_confidence_df$variable)[levels(CO_CO2_MK_slope_with_confidence_df$variable)=="layer"] <- "CO/CO2"
+
+names(CO_CO2_MK_slope_with_confidence_df)[names(CO_CO2_MK_slope_with_confidence_df)=="variable"]  <- "Slope"
+
+CO_CO2_MK_slope_with_confidence_df
+
+
+
+NOx_CO2_MK_slope_with_confidence_df$cuts <- cut(NOx_CO2_MK_slope_with_confidence_df$value, breaks = c(-0.0016,-0.0012, -0.0008, -0.0004, 0, 0.0004, 0.0008), include.lowest = TRUE)
+
+levels(NOx_CO2_MK_slope_with_confidence_df$variable)[levels(NOx_CO2_MK_slope_with_confidence_df$variable)=="layer"] <- "NOx/CO2"
+
+names(NOx_CO2_MK_slope_with_confidence_df)[names(NOx_CO2_MK_slope_with_confidence_df)=="variable"]  <- "Slope"
+
+NOx_CO2_MK_slope_with_confidence_df
+
+
+
+SO2_CO2_MK_slope_with_confidence_df$cuts <- cut(SO2_CO2_MK_slope_with_confidence_df$value, breaks = c(-0.0035, -0.003, -0.0025, -0.002, -0.0015, -0.001, -0.0005, 0, 0.0005), include.lowest = TRUE)
+
+levels(SO2_CO2_MK_slope_with_confidence_df$variable)[levels(SO2_CO2_MK_slope_with_confidence_df$variable)=="layer"] <- "SO2/CO2"
+
+names(SO2_CO2_MK_slope_with_confidence_df)[names(SO2_CO2_MK_slope_with_confidence_df)=="variable"]  <- "Slope"
+
+SO2_CO2_MK_slope_with_confidence_df
+
+```
+
+```{r}
+# 参考 --- 修改下面的代码
+# CO_CO2_slope_with_significance <- ggplot()+
+CO_CO2_slope_with_significance <- ggplot()+
+  geom_raster(data = CO_CO2_slope_with_confidence_df, aes(x = x, y = y, fill = cuts)) + 
+              scale_fill_manual(values = c('#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E','#E67C4D'), na.value = "transparent", name = 'Slope') + 
+              xlab("Longitude") + 
+              ylab("Latitude") +
+  geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+      geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.6)+
+  scale_y_continuous(limits = c(15, 55)) +
+#  theme_gray(base_size = 15) + 
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1))
+```
+
+
+
+
+
+
+```{r}
+# Tau
+# CO_CO2_Tau <- ggplot()+
+CO_CO2_Tau <- ggplot()+
+  geom_raster(data = CO_CO2_MK_tau_with_confidence_df, aes(x = x, y = y, fill = cuts)) + 
+#               scale_fill_brewer(expression("CO"*"/CO"[2]),type = "seq", palette = "Spectral") +
+                scale_fill_manual(values = c('#86C26B', '#9AD67F','#CEEA99','#FFEB85' ,'#F2AF5E','#E67C4D'), na.value = "transparent", name = 'tau', labels=c('-1 - -0.8', '-0.8 - -0.6', '-0.6 - -0.4',  '0.4 - 0.6', '0.6 - 0.8', '0.8 - 1.0')) + 
+              xlab("Longitude") + ylab("Latitude") +
+  geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+      geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group)) +
+  scale_y_continuous(limits = c(15, 55)) +
+#  theme_gray(base_size = 15) + 
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1))
+
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/MK_tau_with_confidence_CO.png", scale = 1, width = 10, height = 6, dpi=500)
+```
+
+
+```{r}
+# NOx_CO2_Tau <- ggplot()+
+NOx_CO2_Tau <- ggplot()+
+  geom_raster(data = NOx_CO2_MK_tau_with_confidence_df, aes(x = x, y = y, fill = cuts)) + 
+#               scale_fill_brewer(expression("CO"*"/CO"[2]),type = "seq", palette = "Spectral") +
+                scale_fill_manual(values = c('#86C26A', '#9AD67F','#CEEA99','#FFEB85' ,'#F2AF5E','#E67C4D'), na.value = "transparent", name = 'tau', labels=c('-1 - -0.8', '-0.8 - -0.6', '-0.6 - -0.4',  '0.4 - 0.6', '0.6 - 0.8', '0.8 - 1.0')) + 
+              xlab("Longitude") + ylab("Latitude") +
+  geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+      geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2) +
+  scale_y_continuous(limits = c(15, 55)) +
+#  theme_gray(base_size = 15) + 
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1))
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/MK_tau_with_confidence_NOx.png", scale = 1, width = 10, height = 6, dpi=500)
+```
+
+```{r}
+# SO2_CO2_Tau <- ggplot()+
+SO2_CO2_Tau <- ggplot()+
+  geom_raster(data = SO2_CO2_MK_tau_with_confidence_df, aes(x = x, y = y, fill = cuts)) + 
+#               scale_fill_brewer(expression("CO"*"/CO"[2]),type = "seq", palette = "Spectral") +
+                scale_fill_manual(values = c('#86C26B', '#9AD67F','#CEEA99','#FFEB85' ,'#F2AF5E','#E67C4D'), na.value = "transparent", name = 'tau', labels=c('-1 - -0.8', '-0.8 - -0.6', '-0.6 - -0.4',  '0.4 - 0.6', '0.6 - 0.8', '0.8 - 1.0')) + 
+              xlab("Longitude") + ylab("Latitude") +
+  geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+      geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2) +
+  scale_y_continuous(limits = c(15, 55)) +
+#  theme_gray(base_size = 15) + 
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1))
+
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/MK_tau_with_confidence_SO2.png", scale = 1, width = 10, height = 6, dpi=500)
+```
+
+```{r}
+
+ggarrange(CO_CO2_Tau,NOx_CO2_Tau, SO2_CO2_Tau, 
+          labels = c("A", "B", "C"),common.legend = TRUE, legend = "right",
+          ncol = 2, nrow = 2)
+
+```
+
+
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/MK_tau_with_confidence_combination_2.png", scale = 1, width = 13, height = 10, dpi=1500)
+```
+
+
+
+```{r}
+# 加九段线
+line_1 <- readOGR("E:/19. PhD-原始数据-2022/8. 中国行政边界/SouthSea/SouthSea/九段线.shp")
+line_1 <- spTransform(line_1, CRS("+init=epsg:4326"))
+
+# 加边缘线
+line_2 <- readOGR("E:/19. PhD-原始数据-2022/8. 中国行政边界/SouthSea/SouthSea/bou2_4l.shp")
+line_2 <- spTransform(line_2, CRS("+init=epsg:4326"))
+
+# 加南海诸岛
+polygon_1 <- readOGR("E:/19. PhD-原始数据-2022/8. 中国行政边界/SouthSea/SouthSea/南海诸岛及其它岛屿.shp")
+polygon_1 <- spTransform(polygon_1, CRS("+init=epsg:4326"))
+```
+
+```{r}
+line_1_df <- fortify(line_1, region = "FID")
+line_2_df <- fortify(line_2, region = "FID")
+
+polygon_1_df <- fortify(polygon_1, region = "BOU2_4M_ID")
+```
+
+
+```{r}
+# sLOPE
+# CO_CO2_slope <- ggplot()+
+CO_CO2_slope <- ggplot()+
+  geom_raster(data = CO_CO2_MK_slope_with_confidence_df, aes(x = x, y = y, fill = cuts)) + 
+              scale_fill_manual(values = c('#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E'), na.value = "transparent", name = 'slope') + 
+              xlab("Longitude") + ylab("Latitude") +
+  geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+      geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+  scale_y_continuous(limits = c(15, 55)) +
+#  theme_gray(base_size = 15) + 
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1))
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/MK_slope_with_confidence_CO.png", scale = 1, width = 10, height = 6, dpi=500)
+```
+
+
+```{r}
+#NOx_CO2_slope <- ggplot()+
+NOx_CO2_slope <- ggplot()+
+  geom_raster(data = NOx_CO2_MK_slope_with_confidence_df, aes(x = x, y = y, fill = cuts)) + 
+              scale_fill_manual(values = c('#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85'), na.value = "transparent", name = 'slope') + 
+              xlab("Longitude") + ylab("Latitude") +
+  geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+      geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+  scale_y_continuous(limits = c(15, 55)) +
+#  theme_gray(base_size = 15) + 
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1))
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/MK_slope_with_confidence_NOx.png", scale = 1, width = 10, height = 6, dpi=500)
+```
+
+```{r}
+# SO2_CO2_slope <- ggplot()+
+SO2_CO2_slope <- ggplot()+
+  geom_raster(data = SO2_CO2_MK_slope_with_confidence_df, aes(x = x, y = y, fill = cuts)) + 
+              scale_fill_manual(values = c('#4F7F3E','#6B9C4F','#86C26B', '#9AD67F', '#B4E09C','#CEEA99','#FFEB85' , '#FDD771','#F2AF5E'), na.value = "transparent", name = 'slope') + 
+              xlab("Longitude") + ylab("Latitude") +
+  geom_polygon(data = admin_boundary_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+      geom_polygon(data = line_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = line_2_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+    geom_polygon(data = polygon_1_df, 
+               aes(x = long, y = lat, group = group),
+               fill = NA, color = "black", size = 0.2)+
+  scale_y_continuous(limits = c(15, 55)) +
+#  theme_gray(base_size = 15) + 
+  theme( 
+        axis.title.x = element_text(colour="black", size = 22),
+        axis.title.y = element_text(colour="black", size = 22),
+        legend.title = element_text(size = 22),
+        legend.position = "right",
+        axis.text.x = element_text(size = 16),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1))
+
+```
+
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/MK_slope_with_confidence_SO2.png", scale = 1, width = 10, height = 6, dpi=500)
+```
+
+
+```{r}
+
+ggarrange(CO_CO2_slope,NOx_CO2_slope, SO2_CO2_slope, 
+          labels = c("A", "B", "C"),legend = "right",
+          ncol = 2, nrow = 2) 
+
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/MK_slope_with_confidence_combination_2.png", scale = 1.2, width = 15, height = 10, dpi=1000)
+```
+
+
+
+# 4. Regional calculation 
+```{r}
+# To perform zonal statistic for each provinces - slope
+
+CO_CO2_slope_Mann_Sen_city <- raster::extract(CO_CO2_slope_Mann_Sen, admin_boundary, fun = mean, na.rm = TRUE, df = TRUE)
+
+CO_CO2_slope_Mann_Sen_city_df <- data.frame(CO_CO2_slope_Mann_Sen_city)
+
+CO_CO2_slope_Mann_Sen_city_df
+
+NOx_CO2_slope_Mann_Sen_city <- raster::extract(NOx_CO2_slope_Mann_Sen, admin_boundary, fun = mean, na.rm = TRUE, df = TRUE)
+
+NOx_CO2_slope_Mann_Sen_city_df <- data.frame(NOx_CO2_slope_Mann_Sen_city)
+
+NOx_CO2_slope_Mann_Sen_city_df
+
+SO2_CO2_slope_Mann_Sen_city <- raster::extract(SO2_CO2_slope_Mann_Sen, admin_boundary, fun = mean, na.rm = TRUE, df = TRUE)
+
+SO2_CO2_slope_Mann_Sen_city_df <- data.frame(SO2_CO2_slope_Mann_Sen_city)
+
+SO2_CO2_slope_Mann_Sen_city_df
+
+```
+
+```{r}
+# To generate the dataframe of zonal statistic - CITIES - slope
+
+# CO_CO2
+CO_CO2_slope_Mann_Sen_city_df$Province <- admin_boundary@data$FIRST_省
+
+CO_CO2_slope_Mann_Sen_city_df$City <- admin_boundary@data$地市
+
+CO_CO2_slope_Mann_Sen_city_df$Province[368:385] <- "香港特别行政区"
+
+CO_CO2_slope_Mann_Sen_city_df$Province[386:393] <- "澳门特别行政区"
+
+CO_CO2_slope_Mann_Sen_city_df$Province[394:415] <- "台湾省"
+
+CO_CO2_slope_Mann_Sen_city_df
+
+write.csv(CO_CO2_slope_Mann_Sen_city_df, "D:/25. Ratster_Output_EMISSION/Ratio_Analysis/CO_CO2_slope_Mann_Sen_city.csv")
+
+# NOx_CO2
+NOx_CO2_slope_Mann_Sen_city_df$Province <- admin_boundary@data$FIRST_省
+
+NOx_CO2_slope_Mann_Sen_city_df$City <- admin_boundary@data$地市
+
+NOx_CO2_slope_Mann_Sen_city_df$Province[368:385] <- "香港特别行政区"
+
+NOx_CO2_slope_Mann_Sen_city_df$Province[386:393] <- "澳门特别行政区"
+
+NOx_CO2_slope_Mann_Sen_city_df$Province[394:415] <- "台湾省"
+
+NOx_CO2_slope_Mann_Sen_city_df
+
+write.csv(NOx_CO2_slope_Mann_Sen_city_df, "D:/25. Ratster_Output_EMISSION/Ratio_Analysis/NOx_CO2_slope_Mann_Sen_city.csv")
+
+
+# SO2_CO2
+SO2_CO2_slope_Mann_Sen_city_df$Province <- admin_boundary@data$FIRST_省
+
+SO2_CO2_slope_Mann_Sen_city_df$City <- admin_boundary@data$地市
+
+SO2_CO2_slope_Mann_Sen_city_df$Province[368:385] <- "香港特别行政区"
+
+SO2_CO2_slope_Mann_Sen_city_df$Province[386:393] <- "澳门特别行政区"
+
+SO2_CO2_slope_Mann_Sen_city_df$Province[394:415] <- "台湾省"
+
+SO2_CO2_slope_Mann_Sen_city_df
+
+write.csv(SO2_CO2_slope_Mann_Sen_city_df, "D:/25. Ratster_Output_EMISSION/Ratio_Analysis/SO2_CO2_slope_Mann_Sen_city.csv")
+
+```
+
+
+
+```{r}
+# To generate the dataframe of zonal statistic - PROVINCES - slope
+
+# CO_CO2
+CO_CO2_slope_Mann_Sen_province_df = CO_CO2_slope_Mann_Sen_city_df %>% group_by(Province) %>%
+                          summarise(slope = mean(slope), .groups = 'drop')
+
+CO_CO2_slope_Mann_Sen_province_df
+
+write.csv(CO_CO2_slope_Mann_Sen_province_df, "D:/25. Ratster_Output_EMISSION/Ratio_Analysis/CO_CO2_slope_Mann_Sen_province.csv")
+
+# NOx_CO2
+NOx_CO2_slope_Mann_Sen_province_df = NOx_CO2_slope_Mann_Sen_city_df %>% group_by(Province) %>%
+                          summarise(slope = mean(slope), .groups = 'drop')
+
+NOx_CO2_slope_Mann_Sen_province_df
+
+write.csv(NOx_CO2_slope_Mann_Sen_province_df, "D:/25. Ratster_Output_EMISSION/Ratio_Analysis/NOx_CO2_slope_Mann_Sen_province.csv")
+
+# SO2_CO2
+SO2_CO2_slope_Mann_Sen_province_df = SO2_CO2_slope_Mann_Sen_city_df %>% group_by(Province) %>%
+                          summarise(slope = mean(slope), .groups = 'drop')
+
+SO2_CO2_slope_Mann_Sen_province_df
+
+write.csv(SO2_CO2_slope_Mann_Sen_province_df, "D:/25. Ratster_Output_EMISSION/Ratio_Analysis/SO2_CO2_slope_Mann_Sen_province.csv")
+```
+
+
+
+```{r}
+# 开始执行语句
+# To generate the dataframe of zonal statistic - REGIONS - slope
+slope_Mann_Sen_city_CO_CO2_ratio <- read.csv(file = "E:/25. Ratster_Output_EMISSION/Six Regions/CO_CO2_slope_Mann_Sen_regions.csv", encoding = "UTF-8")
+slope_Mann_Sen_city_CO_CO2_ratio
+
+slope_Mann_Sen_city_NOx_CO2_ratio <- read.csv(file = "E:/25. Ratster_Output_EMISSION/Six Regions/NOx_CO2_slope_Mann_Sen_regions.csv", encoding = "UTF-8")
+slope_Mann_Sen_city_NOx_CO2_ratio
+
+slope_Mann_Sen_city_SO2_CO2_ratio <- read.csv(file = "E:/25. Ratster_Output_EMISSION/Six Regions/SO2_CO2_slope_Mann_Sen_regions.csv", encoding = "UTF-8")
+slope_Mann_Sen_city_SO2_CO2_ratio
+```
+
+```{r}
+# To generate the dataframe of zonal statistic - REGIONS - slope
+
+# CO_CO2
+slope_Mann_Sen_region_CO_CO2_ratio <- slope_Mann_Sen_city_CO_CO2_ratio %>% 
+  group_by(Regions) %>% 
+  summarise(
+    CO_mean = mean(slope, na.rm = TRUE),
+    sd = sd(slope, na.rm = TRUE),
+    n = n()
+  ) %>% 
+  mutate(se = sd/sqrt(n),
+         Regions = factor(Regions, levels = c('EC', 'MC', 'NC', 'NEC', 'NWC', 'SC', 'SWC')))
+slope_Mann_Sen_region_CO_CO2_ratio
+
+
+# NOx_CO2
+slope_Mann_Sen_region_NOx_CO2_ratio <- slope_Mann_Sen_city_NOx_CO2_ratio %>% 
+  group_by(Regions) %>% 
+  summarise(
+    NOx_mean = mean(slope, na.rm = TRUE),
+    sd = sd(slope, na.rm = TRUE),
+    n = n()
+  ) %>% 
+  mutate(se = sd/sqrt(n),
+         Regions = factor(Regions, levels = c('EC', 'MC', 'NC', 'NEC', 'NWC', 'SC', 'SWC')))
+slope_Mann_Sen_region_NOx_CO2_ratio
+
+
+# SO2_CO2
+slope_Mann_Sen_region_SO2_CO2_ratio <- slope_Mann_Sen_city_SO2_CO2_ratio %>% 
+  group_by(Regions) %>% 
+  summarise(
+    SO2_mean = mean(slope, na.rm = TRUE),
+    sd = sd(slope, na.rm = TRUE),
+    n = n()
+  ) %>% 
+  mutate(se = sd/sqrt(n),
+         Regions = factor(Regions, levels = c('EC', 'MC', 'NC', 'NEC', 'NWC', 'SC', 'SWC')))
+slope_Mann_Sen_region_SO2_CO2_ratio
+```
+```{r}
+# To perform group-wise summary statistics for the dataframe - SLOPE - 执行从代码前，注意重新刷新数据源
+
+slope_Mann_Sen_city_CO_CO2_ratio %>%
+  group_by(Regions) %>%
+  summarize(CO_CO2_slope_regions = median(slope, na.rm = TRUE))
+
+slope_Mann_Sen_city_NOx_CO2_ratio %>%
+  group_by(Regions) %>%
+  summarize(NOx_CO2_slope_regions = median(slope, na.rm = TRUE))
+
+slope_Mann_Sen_city_SO2_CO2_ratio %>%
+  group_by(Regions) %>%
+  summarize(SO2_CO2_slope_regions = median(slope, na.rm = TRUE))
+
+```
+
+
+
+```{r}
+# PLOT
+
+# CO_CO2 --- CO_CO2_regions_slope_summary
+CO_CO2_regions_slope_summary <- ggplot(slope_Mann_Sen_city_CO_CO2_ratio, aes(x = Regions, y = slope, fill = Regions)) +
+  geom_half_violin(aes(fill = Regions),
+                   position = position_nudge(x = .15, y = 0),
+                   adjust=1.5, trim=FALSE, colour=NA, side = 'r') +
+  geom_point(aes(x = as.numeric(Regions) - 0.1,
+                 y = slope,color = Regions),
+                 position = position_jitter(width = .05),size = .25, shape = 20)+
+  geom_boxplot(aes(x = Regions, y = slope, fill = Regions),
+               outlier.shape = NA,
+               width = .05,
+               color = "black") +
+  geom_errorbar(data = slope_Mann_Sen_region_CO_CO2_ratio,
+                aes(x = Regions, y = CO_mean, group = Regions, colour = Regions,
+                    ymin = CO_mean-se, ymax = CO_mean+se),
+                width=.05,
+                position=position_nudge(x = .1, y = 0)
+                ) +
+  labs(y = "Slope", x = "Regions")+
+  scale_color_jco() +
+  scale_fill_jco() +
+  geom_signif(comparisons = list(c("EC", "MC"),
+                                 c("EC", "NC"),
+                                 c("EC", "NEC"),
+                                 c("EC", "NWC"),
+                                 c("EC", "SC"),
+                                 c("EC", "SWC"),
+                                 c("MC", "NC"),
+                                 c("MC", "NEC"),
+                                 c("MC", "NWC"),
+                                 c("MC", "SC"),
+                                 c("MC", "SWC"),
+                                 c("NC", "NEC"),
+                                 c("NC", "NWC"),
+                                 c("NC", "SC"),
+                                 c("NC", "SWC"),
+                                 c("NEC", "NWC"),
+                                 c("NEC", "SC"),
+                                 c("NEC", "SWC"),
+                                 c("NWC", "SC"),
+                                 c("NWC", "SWC"),
+                                 c("SC", "SWC")),
+              map_signif_level = c("***" = 0.001, "**" = 0.01, "*" = 0.05),
+              textsize=5,test=wilcox.test,step_increase=0.05) +
+  theme(axis.text = element_text(size = 18),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 18),
+        legend.title = element_text(size = 18))
+```
+
+```{r}
+
+# NOx_CO2 --- NOx_CO2_regions_slope_summary
+NOx_CO2_regions_slope_summary <- ggplot(slope_Mann_Sen_city_NOx_CO2_ratio, aes(x = Regions, y = slope, fill = Regions)) +
+  geom_half_violin(aes(fill = Regions),
+                   position = position_nudge(x = .15, y = 0),
+                   adjust=1.5, trim=FALSE, colour=NA, side = 'r') +
+  geom_point(aes(x = as.numeric(Regions) - 0.1,
+                 y = slope,color = Regions),
+                 position = position_jitter(width = .05),size = .25, shape = 20)+
+  geom_boxplot(aes(x = Regions, y = slope, fill = Regions),
+               outlier.shape = NA,
+               width = .05,
+               color = "black") +
+  geom_errorbar(data = slope_Mann_Sen_region_NOx_CO2_ratio,
+                aes(x = Regions, y = NOx_mean, group = Regions, colour = Regions,
+                    ymin = NOx_mean-se, ymax = NOx_mean+se),
+                width=.05,
+                position=position_nudge(x = .1, y = 0)
+                ) +
+  labs(y = "Slope", x = "Regions")+
+  scale_color_jco() +
+  scale_fill_jco() +
+  geom_signif(comparisons = list(c("EC", "MC"),
+                                 c("EC", "NC"),
+                                 c("EC", "NEC"),
+                                 c("EC", "NWC"),
+                                 c("EC", "SC"),
+                                 c("EC", "SWC"),
+                                 c("MC", "NC"),
+                                 c("MC", "NEC"),
+                                 c("MC", "NWC"),
+                                 c("MC", "SC"),
+                                 c("MC", "SWC"),
+                                 c("NC", "NEC"),
+                                 c("NC", "NWC"),
+                                 c("NC", "SC"),
+                                 c("NC", "SWC"),
+                                 c("NEC", "NWC"),
+                                 c("NEC", "SC"),
+                                 c("NEC", "SWC"),
+                                 c("NWC", "SC"),
+                                 c("NWC", "SWC"),
+                                 c("SC", "SWC")),
+              map_signif_level = c("***" = 0.001, "**" = 0.01, "*" = 0.05),
+              textsize=5,test=wilcox.test,step_increase=0.05) +
+  theme(axis.text = element_text(size = 18),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 18),
+        legend.title = element_text(size = 18))
+```
+
+```{r}
+# SO2_CO2 --- SO2_CO2_regions_slope_summary
+SO2_CO2_regions_slope_summary <- ggplot(slope_Mann_Sen_city_SO2_CO2_ratio, aes(x = Regions, y = slope, fill = Regions)) +
+  geom_half_violin(aes(fill = Regions),
+                   position = position_nudge(x = .15, y = 0),
+                   adjust=1.5, trim=FALSE, colour=NA, side = 'r') +
+  geom_point(aes(x = as.numeric(Regions) - 0.1,
+                 y = slope,color = Regions),
+                 position = position_jitter(width = .05),size = .25, shape = 20)+
+  geom_boxplot(aes(x = Regions, y = slope, fill = Regions),
+               outlier.shape = NA,
+               width = .05,
+               color = "black") +
+  geom_errorbar(data = slope_Mann_Sen_region_SO2_CO2_ratio,
+                aes(x = Regions, y = SO2_mean, group = Regions, colour = Regions,
+                    ymin = SO2_mean-se, ymax = SO2_mean+se),
+                width=.05,
+                position=position_nudge(x = .1, y = 0)
+                ) +
+  labs(y = "Slope", x = "Regions")+
+  scale_color_jco() +
+  scale_fill_jco() +
+  geom_signif(comparisons = list(c("EC", "MC"),
+                                 c("EC", "NC"),
+                                 c("EC", "NEC"),
+                                 c("EC", "NWC"),
+                                 c("EC", "SC"),
+                                 c("EC", "SWC"),
+                                 c("MC", "NC"),
+                                 c("MC", "NEC"),
+                                 c("MC", "NWC"),
+                                 c("MC", "SC"),
+                                 c("MC", "SWC"),
+                                 c("NC", "NEC"),
+                                 c("NC", "NWC"),
+                                 c("NC", "SC"),
+                                 c("NC", "SWC"),
+                                 c("NEC", "NWC"),
+                                 c("NEC", "SC"),
+                                 c("NEC", "SWC"),
+                                 c("NWC", "SC"),
+                                 c("NWC", "SWC"),
+                                 c("SC", "SWC")),
+              map_signif_level = c("***" = 0.001, "**" = 0.01, "*" = 0.05),
+              textsize=5,test=wilcox.test,step_increase=0.05) +
+  theme(axis.text = element_text(size = 18),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 18),
+        legend.title = element_text(size = 18))
+
+```
+
+
+
+```{r}
+
+ggarrange(CO_CO2_regions_slope_summary,NOx_CO2_regions_slope_summary, SO2_CO2_regions_slope_summary , 
+          labels = c("A", "B", "C"),common.legend = TRUE, legend = "right",font.label = list(size = 25, color = "black"),
+          ncol = 3, nrow = 1) +
+  theme_bw()
+
+```
+
+
+```{r}
+ggsave("Regions_summary_slope.png", scale = 2, width = 20, height = 8, dpi=500)
+```
+
+
+```{r}
+ggsave("CO_CO2_MK_slope_regional_summary.png", scale = 2, width = 5, height = 3, dpi=500)
+```
+
+
+```{r}
+# To perform zonal statistic for each provinces - Tau
+
+CO_CO2_tau_Mann_Sen_city <- raster::extract(CO_CO2_tau_Mann_Sen, admin_boundary, fun = mean, na.rm = TRUE, df = TRUE)
+
+CO_CO2_tau_Mann_Sen_city_df <- data.frame(CO_CO2_tau_Mann_Sen_city)
+
+CO_CO2_tau_Mann_Sen_city_df
+
+NOx_CO2_tau_Mann_Sen_city <- raster::extract(NOx_CO2_tau_Mann_Sen, admin_boundary, fun = mean, na.rm = TRUE, df = TRUE)
+
+NOx_CO2_tau_Mann_Sen_city_df <- data.frame(NOx_CO2_tau_Mann_Sen_city)
+
+NOx_CO2_tau_Mann_Sen_city_df
+
+SO2_CO2_tau_Mann_Sen_city <- raster::extract(SO2_CO2_tau_Mann_Sen, admin_boundary, fun = mean, na.rm = TRUE, df = TRUE)
+
+SO2_CO2_tau_Mann_Sen_city_df <- data.frame(SO2_CO2_tau_Mann_Sen_city)
+
+SO2_CO2_tau_Mann_Sen_city_df
+
+```
+
+```{r}
+# To generate the dataframe of zonal statistic - CITIES - Tau
+
+# CO_CO2
+CO_CO2_tau_Mann_Sen_city_df$Province <- admin_boundary@data$FIRST_省
+
+CO_CO2_tau_Mann_Sen_city_df$City <- admin_boundary@data$地市
+
+CO_CO2_tau_Mann_Sen_city_df$Province[368:385] <- "香港特别行政区"
+
+CO_CO2_tau_Mann_Sen_city_df$Province[386:393] <- "澳门特别行政区"
+
+CO_CO2_tau_Mann_Sen_city_df$Province[394:415] <- "台湾省"
+
+CO_CO2_tau_Mann_Sen_city_df
+
+write.csv(CO_CO2_tau_Mann_Sen_city_df, "D:/25. Ratster_Output_EMISSION/Ratio_Analysis/tau_Mann_Sen_city_CO_CO2_13_17.csv")
+
+# NOx_CO2
+NOx_CO2_tau_Mann_Sen_city_df$Province <- admin_boundary@data$FIRST_省
+
+NOx_CO2_tau_Mann_Sen_city_df$City <- admin_boundary@data$地市
+
+NOx_CO2_tau_Mann_Sen_city_df$Province[368:385] <- "香港特别行政区"
+
+NOx_CO2_tau_Mann_Sen_city_df$Province[386:393] <- "澳门特别行政区"
+
+NOx_CO2_tau_Mann_Sen_city_df$Province[394:415] <- "台湾省"
+
+NOx_CO2_tau_Mann_Sen_city_df
+
+write.csv(NOx_CO2_tau_Mann_Sen_city_df, "D:/25. Ratster_Output_EMISSION/Ratio_Analysis/tau_Mann_Sen_city_NOx_CO2_13_17.csv")
+
+
+# SO2_CO2
+SO2_CO2_tau_Mann_Sen_city_df$Province <- admin_boundary@data$FIRST_省
+
+SO2_CO2_tau_Mann_Sen_city_df$City <- admin_boundary@data$地市
+
+SO2_CO2_tau_Mann_Sen_city_df$Province[368:385] <- "香港特别行政区"
+
+SO2_CO2_tau_Mann_Sen_city_df$Province[386:393] <- "澳门特别行政区"
+
+SO2_CO2_tau_Mann_Sen_city_df$Province[394:415] <- "台湾省"
+
+SO2_CO2_tau_Mann_Sen_city_df
+
+write.csv(SO2_CO2_tau_Mann_Sen_city_df, "D:/25. Ratster_Output_EMISSION/Ratio_Analysis/tau_Mann_Sen_city_SO2_CO2_13_17.csv")
+
+```
+
+
+
+```{r}
+# To generate the dataframe of zonal statistic - PROVINCES - Tau
+
+# CO_CO2
+CO_CO2_tau_Mann_Sen_province_df = CO_CO2_tau_Mann_Sen_city_df %>% group_by(Province) %>%
+                          summarise(tau = mean(tau), .groups = 'drop')
+
+CO_CO2_tau_Mann_Sen_province_df
+
+write.csv(CO_CO2_tau_Mann_Sen_province_df, "D:/25. Ratster_Output_EMISSION/Ratio_Analysis/tau_Mann_Sen_province_CO_CO2_13_17.csv")
+
+# NOx_CO2
+NOx_CO2_tau_Mann_Sen_province_df = NOx_CO2_tau_Mann_Sen_city_df %>% group_by(Province) %>%
+                          summarise(tau = mean(tau), .groups = 'drop')
+
+NOx_CO2_tau_Mann_Sen_province_df
+
+write.csv(NOx_CO2_tau_Mann_Sen_province_df, "D:/25. Ratster_Output_EMISSION/Ratio_Analysis/tau_Mann_Sen_province_NOx_CO2_13_17.csv")
+
+# SO2_CO2
+SO2_CO2_tau_Mann_Sen_province_df = SO2_CO2_tau_Mann_Sen_city_df %>% group_by(Province) %>%
+                          summarise(tau = mean(tau), .groups = 'drop')
+
+SO2_CO2_tau_Mann_Sen_province_df
+
+write.csv(SO2_CO2_tau_Mann_Sen_province_df, "D:/25. Ratster_Output_EMISSION/Ratio_Analysis/tau_Mann_Sen_province_SO2_CO2_13_17.csv")
+```
+
+
+```{r}
+# 开始执行语句
+# To generate the dataframe of zonal statistic - REGIONS - Tau
+
+# CO_CO2
+tau_Mann_Sen_city_CO_CO2_ratio <- read.csv(file = "E:/25. Ratster_Output_EMISSION/Six Regions/CO_CO2_tau_Mann_Sen_regions.csv", encoding = "UTF-8")
+tau_Mann_Sen_city_CO_CO2_ratio
+
+
+# NOx_CO2
+tau_Mann_Sen_city_NOx_CO2_ratio <- read.csv(file = "E:/25. Ratster_Output_EMISSION/Six Regions/NOx_CO2_tau_Mann_Sen_regions.csv", encoding = "UTF-8")
+tau_Mann_Sen_city_NOx_CO2_ratio
+
+
+# SO2_CO2
+tau_Mann_Sen_city_SO2_CO2_ratio <- read.csv(file = "E:/25. Ratster_Output_EMISSION/Six Regions/SO2_CO2_tau_Mann_Sen_regions.csv", encoding = "UTF-8")
+tau_Mann_Sen_city_SO2_CO2_ratio
+```
+
+
+```{r}
+# To perform group-wise summary statistics for the dataframe - TAU values - 执行从代码前，注意重新刷新数据源
+
+tau_Mann_Sen_city_CO_CO2_ratio %>%
+  group_by(Regions) %>%
+  summarize(CO_CO2_tau_regions = median(tau, na.rm = TRUE))
+
+tau_Mann_Sen_city_NOx_CO2_ratio %>%
+  group_by(Regions) %>%
+  summarize(NOx_CO2_tau_regions = median(tau, na.rm = TRUE))
+
+tau_Mann_Sen_city_SO2_CO2_ratio %>%
+  group_by(Regions) %>%
+  summarize(SO2_CO2_tau_regions = median(tau, na.rm = TRUE))
+
+```
+
+
+```{r}
+# CO_CO2
+tau_Mann_Sen_region_CO_CO2_ratio <- tau_Mann_Sen_city_CO_CO2_ratio %>% 
+  group_by(Regions) %>% 
+  summarise(
+    CO_mean = mean(tau, na.rm = TRUE),
+    sd = sd(tau, na.rm = TRUE),
+    n = n()
+  ) %>% 
+  mutate(se = sd/sqrt(n),
+         Regions = factor(Regions, levels = c('EC', 'MC', 'NC', 'NEC', 'NWC', 'SC', 'SWC')))
+tau_Mann_Sen_region_CO_CO2_ratio
+
+
+
+# NOx_CO2
+tau_Mann_Sen_region_NOx_CO2_ratio <- tau_Mann_Sen_city_NOx_CO2_ratio %>% 
+  group_by(Regions) %>% 
+  summarise(
+    NOx_mean = mean(tau, na.rm = TRUE),
+    sd = sd(tau, na.rm = TRUE),
+    n = n()
+  ) %>% 
+  mutate(se = sd/sqrt(n),
+         Regions = factor(Regions, levels = c('EC', 'MC', 'NC', 'NEC', 'NWC', 'SC', 'SWC')))
+tau_Mann_Sen_region_NOx_CO2_ratio
+
+
+
+# SO2_CO2
+tau_Mann_Sen_region_SO2_CO2_ratio <- tau_Mann_Sen_city_SO2_CO2_ratio %>% 
+  group_by(Regions) %>% 
+  summarise(
+    SO2_mean = mean(tau, na.rm = TRUE),
+    sd = sd(tau, na.rm = TRUE),
+    n = n()
+  ) %>% 
+  mutate(se = sd/sqrt(n),
+         Regions = factor(Regions, levels = c('EC', 'MC', 'NC', 'NEC', 'NWC', 'SC', 'SWC')))
+tau_Mann_Sen_region_SO2_CO2_ratio
+```
+
+```{r}
+
+CO_CO2_regions_tau_summary <- ggplot(tau_Mann_Sen_city_CO_CO2_ratio, aes(x = Regions, y = tau, fill = Regions)) +
+  geom_half_violin(aes(fill = Regions),
+                   position = position_nudge(x = .15, y = 0),
+                   adjust=1.5, trim=FALSE, colour=NA, side = 'r') +
+  geom_point(aes(x = as.numeric(Regions) - 0.1,
+                 y = tau,color = Regions),
+                 position = position_jitter(width = .05),size = .25, shape = 20)+
+  geom_boxplot(aes(x = Regions, y = tau, fill = Regions),
+               outlier.shape = NA,
+               width = .05,
+               color = "black") +
+  geom_errorbar(data = tau_Mann_Sen_region_CO_CO2_ratio,
+                aes(x = Regions, y = CO_mean, group = Regions, colour = Regions,
+                    ymin = CO_mean-se, ymax = CO_mean+se),
+                width=.05,
+                position=position_nudge(x = .1, y = 0)
+                ) +
+  labs(y = "Tau", x = "Regions")+
+  scale_color_jco() +
+  scale_fill_jco() +
+  geom_signif(comparisons = list(c("EC", "MC"),
+                                 c("EC", "NC"),
+                                 c("EC", "NEC"),
+                                 c("EC", "NWC"),
+                                 c("EC", "SC"),
+                                 c("EC", "SWC"),
+                                 c("MC", "NC"),
+                                 c("MC", "NEC"),
+                                 c("MC", "NWC"),
+                                 c("MC", "SC"),
+                                 c("MC", "SWC"),
+                                 c("NC", "NEC"),
+                                 c("NC", "NWC"),
+                                 c("NC", "SC"),
+                                 c("NC", "SWC"),
+                                 c("NEC", "NWC"),
+                                 c("NEC", "SC"),
+                                 c("NEC", "SWC"),
+                                 c("NWC", "SC"),
+                                 c("NWC", "SWC"),
+                                 c("SC", "SWC")),
+              map_signif_level = c("***" = 0.001, "**" = 0.01, "*" = 0.05),
+              textsize=5,test=wilcox.test,step_increase=0.05) +
+    theme(axis.text = element_text(size = 18),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 18),
+        legend.title = element_text(size = 18))
+
+
+
+NOx_CO2_regions_tau_summary <- ggplot(tau_Mann_Sen_city_NOx_CO2_ratio, aes(x = Regions, y = tau, fill = Regions)) +
+  geom_half_violin(aes(fill = Regions),
+                   position = position_nudge(x = .15, y = 0),
+                   adjust=1.5, trim=FALSE, colour=NA, side = 'r') +
+  geom_point(aes(x = as.numeric(Regions) - 0.1,
+                 y = tau,color = Regions),
+                 position = position_jitter(width = .05),size = .25, shape = 20)+
+  geom_boxplot(aes(x = Regions, y = tau, fill = Regions),
+               outlier.shape = NA,
+               width = .05,
+               color = "black") +
+  geom_errorbar(data = tau_Mann_Sen_region_NOx_CO2_ratio,
+                aes(x = Regions, y = NOx_mean, group = Regions, colour = Regions,
+                    ymin = NOx_mean-se, ymax = NOx_mean+se),
+                width=.05,
+                position=position_nudge(x = .1, y = 0)
+                ) +
+  labs(y = "Tau", x = "Regions")+
+  scale_color_jco() +
+  scale_fill_jco() +
+  geom_signif(comparisons = list(c("EC", "MC"),
+                                 c("EC", "NC"),
+                                 c("EC", "NEC"),
+                                 c("EC", "NWC"),
+                                 c("EC", "SC"),
+                                 c("EC", "SWC"),
+                                 c("MC", "NC"),
+                                 c("MC", "NEC"),
+                                 c("MC", "NWC"),
+                                 c("MC", "SC"),
+                                 c("MC", "SWC"),
+                                 c("NC", "NEC"),
+                                 c("NC", "NWC"),
+                                 c("NC", "SC"),
+                                 c("NC", "SWC"),
+                                 c("NEC", "NWC"),
+                                 c("NEC", "SC"),
+                                 c("NEC", "SWC"),
+                                 c("NWC", "SC"),
+                                 c("NWC", "SWC"),
+                                 c("SC", "SWC")),
+              map_signif_level = c("***" = 0.001, "**" = 0.01, "*" = 0.05),
+              textsize=5,test=wilcox.test,step_increase=0.05) +
+    theme(axis.text = element_text(size = 18),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 18),
+        legend.title = element_text(size = 18))
+
+
+
+
+SO2_CO2_regions_tau_summary <- ggplot(tau_Mann_Sen_city_SO2_CO2_ratio, aes(x = Regions, y = tau, fill = Regions)) +
+  geom_half_violin(aes(fill = Regions),
+                   position = position_nudge(x = .15, y = 0),
+                   adjust=1.5, trim=FALSE, colour=NA, side = 'r') +
+  geom_point(aes(x = as.numeric(Regions) - 0.1,
+                 y = tau,color = Regions),
+                 position = position_jitter(width = .05),size = .25, shape = 20)+
+  geom_boxplot(aes(x = Regions, y = tau, fill = Regions),
+               outlier.shape = NA,
+               width = .05,
+               color = "black") +
+  geom_errorbar(data = tau_Mann_Sen_region_SO2_CO2_ratio,
+                aes(x = Regions, y = SO2_mean, group = Regions, colour = Regions,
+                    ymin = SO2_mean-se, ymax = SO2_mean+se),
+                width=.05,
+                position=position_nudge(x = .1, y = 0)
+                ) +
+  labs(y = "Tau", x = "Regions")+
+  scale_color_jco() +
+  scale_fill_jco() +
+  geom_signif(comparisons = list(c("EC", "MC"),
+                                 c("EC", "NC"),
+                                 c("EC", "NEC"),
+                                 c("EC", "NWC"),
+                                 c("EC", "SC"),
+                                 c("EC", "SWC"),
+                                 c("MC", "NC"),
+                                 c("MC", "NEC"),
+                                 c("MC", "NWC"),
+                                 c("MC", "SC"),
+                                 c("MC", "SWC"),
+                                 c("NC", "NEC"),
+                                 c("NC", "NWC"),
+                                 c("NC", "SC"),
+                                 c("NC", "SWC"),
+                                 c("NEC", "NWC"),
+                                 c("NEC", "SC"),
+                                 c("NEC", "SWC"),
+                                 c("NWC", "SC"),
+                                 c("NWC", "SWC"),
+                                 c("SC", "SWC")),
+              map_signif_level = c("***" = 0.001, "**" = 0.01, "*" = 0.05),
+              textsize=5,test=wilcox.test,step_increase=0.05) +
+    theme(axis.text = element_text(size = 18),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 18),
+        legend.title = element_text(size = 18))
+
+```
+
+
+```{r}
+
+ggarrange(CO_CO2_regions_tau_summary,NOx_CO2_regions_tau_summary,SO2_CO2_regions_tau_summary, 
+          labels = c("A", "B", "C"),common.legend = TRUE, legend = "right",font.label = list(size = 25, color = "black"),
+          ncol = 3, nrow = 1) +
+  theme_bw()
+
+```
+
+
+```{r}
+ggsave("Regions_summary_tau.png", scale = 2, width = 20, height = 8, dpi=500)
+```
+
+
+
+# Adding - Plot the barchart for LMDI results
+```{r}
+# Date: 2023/11/1
+CO_result <- read.csv('C:/Users/guoma/Desktop/LMDI/Provinces_Results/Result - CO.csv', encoding = 'UTF-8',header = TRUE, as.is = TRUE)
+CO_result
+
+NOx_result <- read.csv('C:/Users/guoma/Desktop/LMDI/Provinces_Results/Result - NOx.csv', encoding = 'UTF-8',header = TRUE, as.is = TRUE)
+NOx_result
+
+SO2_result <- read.csv('C:/Users/guoma/Desktop/LMDI/Provinces_Results/Result - SO2.csv', encoding = 'UTF-8',header = TRUE, as.is = TRUE)
+SO2_result
+```
+
+
+```{r}
+# Change the format of the dataframe
+CO_result <- CO_result %>% pivot_longer(cols=c( 'CO.CO2', 'CO2.COAL','COAL.E','E.CO','CO.INV','INV.GDP','GDP.GDP','GDP.POP','POP'),
+                    names_to='Drivers',
+                    values_to='values')
+
+CO_result$values <- CO_result$values/1000000
+
+NOx_result <- NOx_result %>% pivot_longer(cols=c( 'NOx.CO2', 'CO2.COAL','COAL.E','E.NOx','NOx.INV','INV.GDP','GDP.GDP','GDP.POP','POP'),
+                    names_to='Drivers',
+                    values_to='values')
+
+NOx_result$values <- NOx_result$values/1000000
+
+SO2_result <- SO2_result %>% pivot_longer(cols=c( 'SO2.CO2', 'CO2.COAL','COAL.E','E.SO2','SO2.INV','INV.GDP','GDP.GDP','GDP.POP','POP'),
+                    names_to='Drivers',
+                    values_to='values')
+
+SO2_result$values <- SO2_result$values/1000000
+```
+
+
+
+
+```{r}
+# Plot stacked bar
+
+CO_LMDI <- ggplot(CO_result, aes(fill=Drivers, y=values, x=Provinces)) + 
+    geom_bar(position="stack", stat="identity") + 
+    scale_fill_manual(values = c("#e31a1c", "#1f78b4", "#33a02c",  "#ff7f00", "#6a3d9a", "#a5cee3", "#b2df4a", "#fb9a99", "#feff7f"), labels = c('co-effect', 'technology effect', 'carbon control','energy structure', 'energy efficiency ', 'industrial structure', 'economic effect','regulatory strength','population effect'), name = 'Drivers') +
+    geom_hline(yintercept=0, linetype="dashed", color = "black", size = 0.6) + 
+    ylab('CO contribution (Mt)') +
+    theme( 
+        axis.title.x = element_text(colour="black", size = 45, face = 'bold'),
+        axis.title.y = element_text(colour="black", size = 45, face = 'bold'),
+        legend.title = element_text(size = 40, face = 'bold'),
+        legend.position = "right",
+        axis.text.x = element_text(size = 35, angle = 90, face = 'bold'),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 35, face = 'bold'),
+        legend.text = element_text(size = 35),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        legend.key.size = unit(1.2, "cm"),
+        axis.ticks.x=element_blank() )
+
+
+NOx_LMDI <- ggplot(NOx_result, aes(fill=Drivers, y=values, x=Provinces)) + 
+    geom_bar(position="stack", stat="identity") + 
+    scale_fill_manual(values = c("#33a02c",  "#ff7f00", "#6a3d9a", "#a5cee3", "#b2df4a", "#fb9a99","#e31a1c", "#1f78b4","#feff7f"), name = 'Drivers') +
+    geom_hline(yintercept=0, linetype="dashed", color = "black", size = 0.6) + 
+    ylab('NOx contribution (Mt)') +
+    theme( 
+        axis.title.x = element_text(colour="black", size = 45, face = 'bold'),
+        axis.title.y = element_text(colour="black", size = 45, face = 'bold'),
+        legend.title = element_text(size = 40, face = 'bold'),
+        legend.position = "right",
+        axis.text.x = element_text(size = 35, angle = 90, face = 'bold'),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 35, face = 'bold'),
+        legend.text = element_text(size = 35),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        legend.key.size = unit(1.2, "cm"),
+        axis.ticks.x=element_blank() )
+
+SO2_LMDI <- ggplot(SO2_result, aes(fill=Drivers, y=values, x=Provinces)) + 
+    geom_bar(position="stack", stat="identity") + 
+    scale_fill_manual(values = c("#33a02c",  "#ff7f00", "#6a3d9a", "#a5cee3", "#b2df4a", "#fb9a99","#feff7f","#e31a1c", "#1f78b4"),name = 'Drivers') +
+    geom_hline(yintercept=0, linetype="dashed", color = "black", size = 0.6) + 
+    ylab('SO2 contribution (Mt)') +
+    theme( 
+        axis.title.x = element_text(colour="black", size = 45, face = 'bold'),
+        axis.title.y = element_text(colour="black", size = 45, face = 'bold'),
+        legend.title = element_text(size = 40, face = 'bold'),
+        legend.position = "right",
+        axis.text.x = element_text(size = 35, angle = 90, face = 'bold'),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 35, face = 'bold'),
+        legend.text = element_text(size = 35),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        legend.key.size = unit(1.2, "cm"))
+
+```
+
+
+
+```{r}
+
+ggarrange(CO_LMDI,NOx_LMDI, SO2_LMDI,
+          legend = "right",common.legend = TRUE, 
+          ncol = 1, nrow = 3) 
+
+```
+
+
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/LMDI/LMDI_Provinces_combination.png", scale = 0.9, width = 28, height = 35, dpi=500)
+```
+
+
+# Adding - Regions
+# Adding - Plot the barchart for LMDI results
+```{r}
+# Date: 2023/11/1
+CO_result <- read.csv('C:/Users/guoma/Desktop/Paper 1- Revision/LMDI/Regions_Results/Result - CO - RATE.csv', encoding = 'UTF-8',header = TRUE, as.is = TRUE)
+CO_result
+
+NOx_result <- read.csv('C:/Users/guoma/Desktop/Paper 1- Revision/LMDI/Regions_Results/Result - NOx - RATE.csv', encoding = 'UTF-8',header = TRUE, as.is = TRUE)
+NOx_result
+
+SO2_result <- read.csv('C:/Users/guoma/Desktop/Paper 1- Revision/LMDI/Regions_Results/Result - SO2 - RATE.csv', encoding = 'UTF-8',header = TRUE, as.is = TRUE)
+SO2_result
+```
+
+
+```{r}
+# Change the format of the dataframe
+CO_result <- CO_result %>% pivot_longer(cols=c( 'CO.CO2', 'CO2.COAL','COAL.E','E.CO','CO.INV','INV.GDP','GDP.GDP','GDP.POP','POP'),
+                    names_to='Drivers',
+                    values_to='values')
+
+CO_result$values <- CO_result$values
+
+NOx_result <- NOx_result %>% pivot_longer(cols=c( 'NOx.CO2', 'CO2.COAL','COAL.E','E.NOx','NOx.INV','INV.GDP','GDP.GDP','GDP.POP','POP'),
+                    names_to='Drivers',
+                    values_to='values')
+
+NOx_result$values <- NOx_result$values
+
+SO2_result <- SO2_result %>% pivot_longer(cols=c( 'SO2.CO2', 'CO2.COAL','COAL.E','E.SO2','SO2.INV','INV.GDP','GDP.GDP','GDP.POP','POP'),
+                    names_to='Drivers',
+                    values_to='values')
+
+SO2_result$values <- SO2_result$values
+```
+
+
+
+
+```{r}
+# Plot stacked bar
+# CO_LMDI <- ggplot(CO_result, aes(fill=Drivers, y=values, x=Regions)) + 
+CO_LMDI <- ggplot(CO_result, aes(fill=Drivers, y=values, x=Regions)) + 
+    geom_bar(position="stack", stat="identity", width = 0.5) + 
+    scale_fill_manual(values = c("#e31a1c", "#1f78b4", "#33a02c",  "#ff7f00", "#6a3d9a", "#a5cee3", "#b2df4a", "#fb9a99", "#feff7f"), labels = c('Synergistic reduction', 'Cleaner production', 'Carbon mitigation','Energy structure', 'Energy efficiency ', 'Industrial structure', 'Economic development','Regulatory efficiency','Population growth'), name = 'Drivers') +
+    geom_hline(yintercept=0, linetype="dashed", color = "black", size = 0.6) + 
+    ylab('CO contribution rate (%)') +
+    theme( 
+        axis.title.x = element_text(colour="black", size = 45),
+        axis.title.y = element_text(colour="black", size = 45),
+        legend.title = element_text(size = 40, face = 'bold'),
+        legend.position = "right",
+        axis.text.x = element_text(size = 35),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 35),
+        legend.text = element_text(size = 35),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        legend.key.size = unit(1.2, "cm"))
+```
+
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/LMDI/Regions_Results/LMDI_Regions_co.png", scale = 1.2, width = 18, height = 22, dpi=500)
+```
+
+
+```{r}
+# NOx_LMDI <- ggplot(NOx_result, aes(fill=Drivers, y=values, x=Regions)) + 
+NOx_LMDI <- ggplot(NOx_result, aes(fill=Drivers, y=values, x=Regions)) + 
+    geom_bar(position="stack", stat="identity", width = 0.5) + 
+    scale_fill_manual(values = c("#33a02c",  "#ff7f00", "#6a3d9a", "#a5cee3", "#b2df4a", "#fb9a99","#e31a1c", "#1f78b4","#feff7f"), name = 'Drivers') +
+    geom_hline(yintercept=0, linetype="dashed", color = "black", size = 0.6) + 
+    ylab('NOx contribution rate (%)') +
+    theme( 
+        axis.title.x = element_text(colour="black", size = 45),
+        axis.title.y = element_text(colour="black", size = 45),
+        legend.title = element_text(size = 40, face = 'bold'),
+        legend.position = "right",
+        axis.text.x = element_text(size = 35),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 35),
+        legend.text = element_text(size = 35),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        legend.key.size = unit(1.2, "cm"))
+```
+
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/LMDI/Regions_Results/LMDI_Regions_NOx.png", scale = 1.2, width = 18, height = 22, dpi=500)
+```
+
+```{r}
+# SO2_LMDI <- ggplot(SO2_result, aes(fill=Drivers, y=values, x=Regions)) + 
+SO2_LMDI <- ggplot(SO2_result, aes(fill=Drivers, y=values, x=Regions)) + 
+    geom_bar(position="stack", stat="identity", width = 0.5) + 
+    scale_fill_manual(values = c("#33a02c",  "#ff7f00", "#6a3d9a", "#a5cee3", "#b2df4a", "#fb9a99","#feff7f","#e31a1c", "#1f78b4"),name = 'Drivers') +
+    geom_hline(yintercept=0, linetype="dashed", color = "black", size = 0.6) + 
+    ylab(expression("SO"[2]~"concentration rate (%)")) +
+    theme( 
+        axis.title.x = element_text(colour="black", size = 45),
+        axis.title.y = element_text(colour="black", size = 45),
+        legend.title = element_text(size = 40, face = 'bold'),
+        legend.position = "right",
+        axis.text.x = element_text(size = 35),  # Set size of x-axis tick labels
+        axis.text.y = element_text(size = 35),
+        legend.text = element_text(size = 35),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_line(color = "lightgrey"),    # Set color of major grid lines to red
+        panel.grid.minor = element_line(color = 'lightgrey'),
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        legend.key.size = unit(1.2, "cm"))
+
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/LMDI/Regions_Results/LMDI_Regions_SO2.png", scale = 1.2, width = 18, height = 22, dpi=900)
+```
+
+```{r}
+
+ggarrange(CO_LMDI,NOx_LMDI, SO2_LMDI,
+          legend = "right",common.legend = TRUE, 
+          ncol = 1, nrow = 3) 
+
+```
+
+```{r}
+ggsave("C:/Users/guoma/Desktop/Paper 1- Revision/LMDI/Regions_Results/LMDI_Regions_combination_rate_3.png", scale = 1.2, width = 18, height = 22, dpi=500)
+```
+
+
+# 6. Waterfall plot for CO2 emission at national scale
+```{r}
+
+raster_1 <- raster('C:/Users/guoma/Downloads/50R_20220101-20230101.tif')
+raster_2 <- raster('C:/Users/guoma/Downloads/49R_20220101-20230101.tif')
+
+crs(raster_1) <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"
+crs(raster_2) <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"
+```
+
+```{r}
+# Upload shape-file of administrative boundary of China
+admin_boundary <- readOGR("D:/PhD_地理所项目/4. 江西/1. 边界/江西省.shp")
+admin_boundary <- spTransform(admin_boundary, CRS("+init=epsg:4326"))
+```
+
+
+
+
+```{r}
+# To crop Jiangxi region
+LULC_Jiangxi_1 <- mask(x = raster_1, mask = admin_boundary)
+LULC_Jiangxi_2 <- mask(x = raster_2, mask = admin_boundary)
+
+writeRaster(LULC_Jiangxi_1, "D:/PhD_地理所项目/4. 江西/9. LULC/Jiangxi_LULC_1.tif", overwrite = TRUE)
+writeRaster(LULC_Jiangxi_2, "D:/PhD_地理所项目/4. 江西/9. LULC/Jiangxi_LULC_2.tif", overwrite = TRUE)
+```
+
+
+```{r}
+x <- list(raster_1,raster_2)
+names(x)[1:2] <- c('x', 'y')
+x$fun <- mean
+x$na.rm <- TRUE
+
+y <- do.call(mosaic, x)
+
+
+
+
+
+
+
+
+
